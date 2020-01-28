@@ -1,5 +1,6 @@
 import "lib/github.com/diku-dk/lys/lys"
 import "lib/github.com/athas/vector/vspace"
+import "lib/github.com/diku-dk/cpprandom/random"
 
 module vec3 = mk_vspace_3d f32
 type vec3 = vec3.vector
@@ -12,12 +13,14 @@ let mkray (o: vec3) (d: vec3): ray = { origin = o, dir = vec3.normalise(d) }
 let point_at_param (r: ray) (t: f32): vec3 = 
   r.origin vec3.+ vec3.scale t r.dir
 
+module dist = uniform_real_distribution f32 minstd_rand
+
 type maybe 't = #nothing | #just t
 
 type hit = { t: f32, pos: vec3, normal: vec3 }
 
 type geom = #sphere { center: vec3, radius: f32 }
-type group = []geom
+type~ group = []geom
 
 let vcol_to_argb (c : vec3) : argb.colour = argb.from_rgba c.x c.y c.z 1f32
 
@@ -62,11 +65,15 @@ let color (r: ray) (world: group): vec3 =
     in (vec3.+) (vec3.scale (1.0 - t) (mkvec3 (1.0, 1.0, 1.0)))
                 (vec3.scale t (mkvec3 (0.5, 0.7, 1.0)))
 
-let shoot (w : i32) (h : i32) (j : i32) (i : i32) : argb.colour =
+type rnge = minstd_rand.rng
+
+let sample (w: i32, h: i32) (j : i32, i : i32) (offset_x : f32, offset_y : f32) : vec3 =
   let world =
     [ #sphere { center = mkvec3 (0, 0, -1), radius = 0.5 }
     , #sphere { center = mkvec3 (0, -100.5, -1), radius = 100 } ]
-  let (x, y) = (f32.i32 j / f32.i32 w, (f32.i32 h - f32.i32 i) / f32.i32 h)
+  let j = f32.i32 j + offset_x
+  let i = f32.i32 i + offset_y
+  let (x, y) = (j / f32.i32 w, (f32.i32 h - i) / f32.i32 h)
   let ratio = f32.i32 w / f32.i32 h
   let bot_left = mkvec3 (-ratio, -1.0, -1.0)
   let vertical = mkvec3 (0.0, 2.0, 0.0)
@@ -75,23 +82,42 @@ let shoot (w : i32) (h : i32) (j : i32) (i : i32) : argb.colour =
   let r = mkray origin (bot_left
                         vec3.+ vec3.scale x horizontal
                         vec3.+ vec3.scale y vertical)
-  let col = color r world
-  in vcol_to_argb col
+  in color r world
+
+let sample_all (n : i32) (w : i32) (h : i32) (rng : rnge) : (rnge, [][]argb.colour) =
+	let (rng, offsets) =
+		loop (rng, offsets) = (rng, replicate n (0,0))
+		  for i < n
+				do let (rng, offset_x) = dist.rand (0,1) rng
+        	let (rng, offset_y) = dist.rand (0,1) rng
+					in (rng, offsets with [i] = (offset_x, offset_y))
+  let sample' i j offset = sample (w, h) (j, i) offset vec3./ mkvec3(f32.i32 n, f32.i32 n, f32.i32 n)
+	let img = tabulate_2d h w (\i j -> vcol_to_argb (reduce_comm (vec3.+) (mkvec3 (0.0, 0, 0)) (map (sample' i j) offsets)))
+  in (rng, img)
 
 module lys: lys with text_content = i32 = {
-  type state = {time: f32, h: i32, w: i32}
+  type~ state = {time: f32, h: i32, w: i32, rng: minstd_rand.rng, img: [][]argb.colour}
   let grab_mouse = false
 
   let init (seed: u32) (h: i32) (w: i32): state =
-    {time = 0, w, h}
+    {time = 0
+		, w
+		, h
+		, rng = minstd_rand.rng_from_seed [123]
+		, img = tabulate_2d h w (\_ _ -> argb.black)}
 
   let resize (h: i32) (w: i32) (s: state) =
     s with h = h with w = w
 
-  let event (e: event) (s: state) = s
+  let event (e: event) (s: state) =
+		match e
+			case #step ->
+        let n = 100
+        let (rng, img) = sample_all n s.w s.h s.rng
+				in s with img = img with rng = rng
+			case _     -> s
 
-  let render (s: state) =
-    tabulate_2d (s.h) (s.w) (\i j -> shoot s.w s.h j i)
+  let render (s: state) = s.img
 
   let text_format () =
     "FPS: %d\nGOTTA GO FAST"
@@ -103,4 +129,3 @@ module lys: lys with text_content = i32 = {
 
   let text_colour = const argb.yellow
 }
-
