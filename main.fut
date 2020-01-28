@@ -65,33 +65,56 @@ let color (r: ray) (world: group): vec3 =
     in (vec3.+) (vec3.scale (1.0 - t) (mkvec3 (1.0, 1.0, 1.0)))
                 (vec3.scale t (mkvec3 (0.5, 0.7, 1.0)))
 
+type camera = { dir: vec3, ratio: f32, origin: vec3 }
+
+let mk_camera (ratio: f32) (t: f32): camera =
+  { dir = mkvec3 (0, 0, -1)
+  , ratio = ratio
+  , origin = mkvec3 (f32.sin (t * 2), 0.1 + f32.cos t * 0.5, 0.5) }
+
+let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
+
+let get_ray (cam: camera) (x: f32) (y: f32): ray =
+  let world_up = mkvec3 (0, 1, 0)
+  let field_of_view = 80.0
+  let f = (to_radians field_of_view) / 2.0
+  let cam_right = vec3.normalise (vec3.cross cam.dir world_up)
+  let cam_up = vec3.normalise (vec3.cross cam_right cam.dir)
+  let a = vec3.scale (f32.cos f) cam.dir
+  let b = vec3.scale (f32.sin f) cam_up
+  let c = vec3.scale (f32.sin f * cam.ratio) cam_right
+  let screen_bot_left = a vec3.- c vec3.- b
+  let screen_x_dir = vec3.scale 2 (a vec3.- b vec3.- screen_bot_left)
+  let screen_y_dir = vec3.scale 2 (a vec3.- c vec3.- screen_bot_left)
+  in mkray cam.origin
+           (       screen_bot_left
+            vec3.+ vec3.scale x screen_x_dir
+            vec3.+ vec3.scale y screen_y_dir)
+
 type rnge = minstd_rand.rng
 
-let sample (w: i32, h: i32) (j : i32, i : i32) (offset_x : f32, offset_y : f32) : vec3 =
+let sample (w: i32, h: i32) (j : i32, i : i32) (offset_x : f32, offset_y : f32) (t: f32) : vec3 =
   let world =
     [ #sphere { center = mkvec3 (0, 0, -1), radius = 0.5 }
-    , #sphere { center = mkvec3 (0, -100.5, -1), radius = 100 } ]
+    , #sphere { center = mkvec3 (-0.5, 0.5, -2), radius = 0.5 }
+    , #sphere { center = mkvec3 (8, 0, -10), radius = 0.5 }
+    , #sphere { center = mkvec3 (0, -400.4, -1), radius = 400 } ]
   let j = f32.i32 j + offset_x
   let i = f32.i32 i + offset_y
   let (x, y) = (j / f32.i32 w, (f32.i32 h - i) / f32.i32 h)
   let ratio = f32.i32 w / f32.i32 h
-  let bot_left = mkvec3 (-ratio, -1.0, -1.0)
-  let vertical = mkvec3 (0.0, 2.0, 0.0)
-  let horizontal = mkvec3 (2.0 * ratio, 0.0, 0.0)
-  let origin = mkvec3 (0.0, 0.0, 0.0)
-  let r = mkray origin (bot_left
-                        vec3.+ vec3.scale x horizontal
-                        vec3.+ vec3.scale y vertical)
+  let cam = mk_camera ratio t
+  let r = get_ray cam x y
   in color r world
 
-let sample_all (n : i32) (w : i32) (h : i32) (rng : rnge) : (rnge, [][]argb.colour) =
+let sample_all (n : i32) (w : i32) (h : i32) (rng : rnge) (time: f32) : (rnge, [][]argb.colour) =
 	let (rng, offsets) =
 		loop (rng, offsets) = (rng, replicate n (0,0))
 		  for i < n
 				do let (rng, offset_x) = dist.rand (0,1) rng
         	let (rng, offset_y) = dist.rand (0,1) rng
 					in (rng, offsets with [i] = (offset_x, offset_y))
-  let sample' i j offset = sample (w, h) (j, i) offset vec3./ mkvec3(f32.i32 n, f32.i32 n, f32.i32 n)
+  let sample' i j offset = sample (w, h) (j, i) offset time vec3./ mkvec3(f32.i32 n, f32.i32 n, f32.i32 n)
 	let img = tabulate_2d h w (\i j -> vcol_to_argb (reduce_comm (vec3.+) (mkvec3 (0.0, 0, 0)) (map (sample' i j) offsets)))
   in (rng, img)
 
@@ -100,7 +123,7 @@ module lys: lys with text_content = i32 = {
   let grab_mouse = false
 
   let init (seed: u32) (h: i32) (w: i32): state =
-    {time = 0
+    { time = 0
 		, w
 		, h
 		, rng = minstd_rand.rng_from_seed [123]
@@ -111,10 +134,11 @@ module lys: lys with text_content = i32 = {
 
   let event (e: event) (s: state) =
 		match e
-			case #step ->
+			case #step dt ->
         let n = 100
-        let (rng, img) = sample_all n s.w s.h s.rng
-				in s with img = img with rng = rng
+        let time = s.time + dt
+        let (rng, img) = sample_all n s.w s.h s.rng time
+				in s with img = img with rng = rng with time = time
 			case _     -> s
 
   let render (s: state) = s.img
