@@ -10,7 +10,7 @@ let mkvec3 (x, y, z) : vec3 = {x, y, z}
 type ray = { origin: vec3, dir: vec3 }
 
 let mkray (o: vec3) (d: vec3): ray = { origin = o, dir = vec3.normalise(d) }
-let point_at_param (r: ray) (t: f32): vec3 = 
+let point_at_param (r: ray) (t: f32): vec3 =
   r.origin vec3.+ vec3.scale t r.dir
 
 module dist = uniform_real_distribution f32 minstd_rand
@@ -42,7 +42,7 @@ let hit_sphere (tmin: f32) (tmax: f32) (r: ray) (center: vec3) (radius: f32): ma
                          let normal = vec3.scale (1/radius) (pos vec3.- center)
                          in #just { t, pos, normal }
                     else #nothing
-     else #nothing 
+     else #nothing
 
 let hit_geom (tmin: f32) (tmax: f32) (r: ray) (g: geom): maybe hit =
   match g
@@ -58,9 +58,9 @@ let hit_group (tmin: f32) (tmax: f32) (r: ray) (xs: group): maybe hit =
 
 let color (r: ray) (world: group): vec3 =
   match hit_group 0.0 f32.highest r world
-  case #just hit' -> 
+  case #just hit' ->
     vec3.scale 0.5 (hit'.normal vec3.+ mkvec3 (1, 1, 1))
-  case #nothing -> 
+  case #nothing ->
     let t = 0.5 * (r.dir.y + 1.0)
     in (vec3.+) (vec3.scale (1.0 - t) (mkvec3 (1.0, 1.0, 1.0)))
                 (vec3.scale t (mkvec3 (0.5, 0.7, 1.0)))
@@ -108,14 +108,14 @@ let sample (w: i32, h: i32) (j : i32, i : i32) (offset_x : f32, offset_y : f32) 
   in color r world
 
 let sample_all (n : i32) (w : i32) (h : i32) (rng : rnge) (time: f32) : (rnge, [][]argb.colour) =
-	let (rng, offsets) =
-		loop (rng, offsets) = (rng, replicate n (0,0))
-		  for i < n
-				do let (rng, offset_x) = dist.rand (0,1) rng
-        	let (rng, offset_y) = dist.rand (0,1) rng
-					in (rng, offsets with [i] = (offset_x, offset_y))
+  let (rng, offsets) =
+    loop (rng, offsets) = (rng, replicate n (0,0))
+      for i < n
+        do let (rng, offset_x) = dist.rand (0,1) rng
+          let (rng, offset_y) = dist.rand (0,1) rng
+          in (rng, offsets with [i] = (offset_x, offset_y))
   let sample' i j offset = sample (w, h) (j, i) offset time vec3./ mkvec3(f32.i32 n, f32.i32 n, f32.i32 n)
-	let img = tabulate_2d h w (\i j -> vcol_to_argb (reduce_comm (vec3.+) (mkvec3 (0.0, 0, 0)) (map (sample' i j) offsets)))
+  let img = tabulate_2d h w (\i j -> vcol_to_argb (reduce_comm (vec3.+) (mkvec3 (0.0, 0, 0)) (map (sample' i j) offsets)))
   in (rng, img)
 
 module lys: lys with text_content = (i32, i32) = {
@@ -125,22 +125,22 @@ module lys: lys with text_content = (i32, i32) = {
 
   let init (seed: u32) (h: i32) (w: i32): state =
     { time = 0
-		, w
-		, h
-		, rng = minstd_rand.rng_from_seed [123]
-		, img = tabulate_2d h w (\_ _ -> argb.black)
+    , w
+    , h
+    , rng = minstd_rand.rng_from_seed [123]
+    , img = tabulate_2d h w (\_ _ -> argb.black)
     , samples = 1}
 
   let resize (h: i32) (w: i32) (s: state) =
     s with h = h with w = w
 
   let event (e: event) (s: state) =
-		match e
-			case #step dt ->
+    match e
+      case #step dt ->
         let n = s.samples
         let time = s.time + dt
         let (rng, img) = sample_all n s.w s.h s.rng time
-				in s with img = img with rng = rng with time = time
+        in s with img = img with rng = rng with time = time
       case #keydown {key} ->
         if      key == SDLK_w then s with samples = s.samples * 2
         else if key == SDLK_s then s with samples = if s.samples < 2 then 1
