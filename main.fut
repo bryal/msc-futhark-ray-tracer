@@ -32,12 +32,27 @@ type~ group = []geom
 
 type bounds = { tmin: f32, tmax: f32 }
 
-type rnge = minstd_rand.rng
+module rnge = minstd_rand
+type rnge = rnge.rng
 
 type camera = { dir: vec3, ratio: f32, origin: vec3 }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
+
+-- TODO: Improve. Do this in deterministic constant time.
+let random_in_unit_sphere (rng: rnge): vec3 =
+  let (v, _, _) =
+    -- NOTE: This `n` prevents us from getting stuck in seemingly
+    -- infinite loops. Use a better algo.
+    loop (p, rng, n) = (mkvec3 1 1 1, rng, 4)
+    while vec3.quadrance p >= 1 && n > 0
+    do let (rng, x) = dist.rand (0,1) rng
+       let (rng, y) = dist.rand (0,1) rng
+       let (rng, z) = dist.rand (0,1) rng
+       let v = vec3.scale 2 (mkvec3 x y z) vec3.- mkvec3 1 1 1
+       in (v, rng, n - 1)
+  in v
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -70,14 +85,29 @@ let hit_group (bn: bounds) (r: ray) (xs: group): maybe hit =
     case (#just a', #just b') -> if a'.t < b'.t then a else b
   in reduce select_min_hit #nothing (map (hit_geom bn r) xs)
 
-let color (r: ray) (world: group): vec3 =
-  match hit_group { tmin = 0.0, tmax = f32.highest } r world
-  case #just hit' ->
-    vec3.scale 0.5 (hit'.normal vec3.+ mkvec3_repeat 1)
-  case #nothing ->
-    let t = 0.5 * (r.dir.y + 1.0)
-    in (vec3.+) (vec3.scale (1.0 - t) (mkvec3_repeat 1))
-                (vec3.scale t (mkvec3 0.5 0.7 1.0))
+let advance_rng (rng: rnge): rnge =
+  let (rng, _) = dist.rand (0,1) rng in rng
+
+let color (r: ray) (world: group) (rng: rnge): vec3 =
+  let bounds = { tmin = 0.0, tmax = f32.highest }
+  let (c, _, _, _) =
+    loop (c, r, rng, continue) =
+         (mkvec3 0.8 0.9 1.0, r, rng, true)
+    while continue
+    do match hit_group bounds r world
+       case #just hit' ->
+         let target = hit'.pos
+                      vec3.+ hit'.normal
+                      vec3.+ random_in_unit_sphere rng
+         let rng = advance_rng rng
+         let c = vec3.scale 0.5 c
+         let eps = 0.001
+         let wi = vec3.normalise (target vec3.- hit'.pos)
+         let r = mkray (hit'.pos vec3.+ vec3.scale eps wi) wi
+         in (c, r, rng, true)
+       case #nothing ->
+         (c, r, rng, false)
+  in c
 
 let mk_camera (ratio: f32) (t: f32): camera =
   { dir = mkvec3 0 0 (-1)
@@ -106,6 +136,7 @@ let get_ray (cam: camera) (coord: vec2): ray =
 let sample (w: i32, h: i32)
            (j: i32, i: i32)
            (offset: vec2)
+           (rng: rnge)
            (t: f32)
          : vec3 =
   let world =
@@ -119,27 +150,29 @@ let sample (w: i32, h: i32)
   let ratio = f32.i32 w / f32.i32 h
   let cam = mk_camera ratio t
   let r = get_ray cam xy
-  in color r world
+  in color r world rng
 
 let sample_all (n: i32)
                (w: i32, h: i32)
                (rng: rnge)
                (time: f32)
              : (rnge, [][]argb.colour) =
-  let (rng, offsets) =
-    loop (rng, offsets) = (rng, replicate n (mkvec2 0 0))
-    for i < n
-    do let (rng, offset_x) = dist.rand (0,1) rng
-       let (rng, offset_y) = dist.rand (0,1) rng
-       in (rng, offsets with [i] = mkvec2 offset_x offset_y)
-  let sample' i j offset =
-    (vec3./) (sample (w, h) (j, i) offset time)
-             (mkvec3_repeat (f32.i32 n))
+  let rngs = rnge.split_rng n rng
+  let rngss = map (rnge.split_rng (w * h)) rngs
+  let sample' i j rngs =
+    let ix = i * w + j
+    let rng = rngs[ix]
+    let (rng, offset_x) = dist.rand (0,1) rng
+    let (rng, offset_y) = dist.rand (0,1) rng
+    let offset = mkvec2 offset_x offset_y
+    in (vec3./) (sample (w, h) (j, i) offset rng time)
+                (mkvec3_repeat (f32.i32 n))
   let img = tabulate_2d h w <| \i j ->
-              vcol_to_argb (reduce_comm (vec3.+)
-                                        (mkvec3_repeat 0)
-                                        (map (sample' i j) offsets))
-  in (rng, img)
+              vcol_to_argb (reduce_comm
+                              (vec3.+)
+                              (mkvec3_repeat 0)
+                              (map (sample' i j) rngss))
+  in (advance_rng rng, img)
 
 module lys: lys with text_content = (i32, i32) = {
   type~ state = { time: f32
