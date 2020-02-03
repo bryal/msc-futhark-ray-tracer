@@ -118,8 +118,9 @@ let sample_all (n : i32) (w : i32) (h : i32) (rng : rnge) (time: f32) : (rnge, [
 	let img = tabulate_2d h w (\i j -> vcol_to_argb (reduce_comm (vec3.+) (mkvec3 (0.0, 0, 0)) (map (sample' i j) offsets)))
   in (rng, img)
 
-module lys: lys with text_content = i32 = {
-  type~ state = {time: f32, h: i32, w: i32, rng: minstd_rand.rng, img: [][]argb.colour}
+module lys: lys with text_content = (i32, i32) = {
+  type~ state = {time: f32, h: i32, w: i32, rng: minstd_rand.rng,
+                 img: [][]argb.colour, samples: i32}
   let grab_mouse = false
 
   let init (seed: u32) (h: i32) (w: i32): state =
@@ -127,7 +128,8 @@ module lys: lys with text_content = i32 = {
 		, w
 		, h
 		, rng = minstd_rand.rng_from_seed [123]
-		, img = tabulate_2d h w (\_ _ -> argb.black)}
+		, img = tabulate_2d h w (\_ _ -> argb.black)
+    , samples = 1}
 
   let resize (h: i32) (w: i32) (s: state) =
     s with h = h with w = w
@@ -135,21 +137,26 @@ module lys: lys with text_content = i32 = {
   let event (e: event) (s: state) =
 		match e
 			case #step dt ->
-        let n = 100
+        let n = s.samples
         let time = s.time + dt
         let (rng, img) = sample_all n s.w s.h s.rng time
 				in s with img = img with rng = rng with time = time
-			case _     -> s
+      case #keydown {key} ->
+        if      key == SDLK_w then s with samples = s.samples * 2
+        else if key == SDLK_s then s with samples = if s.samples < 2 then 1
+                                                    else s.samples / 2
+        else s
+      case _ -> s
 
   let render (s: state) = s.img
 
   let text_format () =
-    "FPS: %d\nGOTTA GO FAST"
+    "FPS: %d\nGOTTA GO FAST\nSAMPLES: %d"
 
-  type text_content = i32
+  type text_content = (i32, i32)
 
-  let text_content (render_duration: f32) (s: state): i32 =
-      t32 render_duration
+  let text_content (render_duration: f32) (s: state): text_content =
+      (t32 render_duration, s.samples)
 
   let text_colour = const argb.yellow
 }
