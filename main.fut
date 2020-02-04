@@ -31,6 +31,7 @@ type maybe 't = #nothing | #just t
 type material
   = #metal { albedo: vec3, fuzz: f32 }
   | #lambertian { albedo: vec3 }
+  | #dielectric { ref_ix: f32 }
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
@@ -65,6 +66,26 @@ let random_in_unit_sphere (rng: rnge): vec3 =
 let reflect (wi: vec3) (n: vec3): vec3 =
   wi vec3.- vec3.scale (2 * vec3.dot wi n) n
 
+-- Returns #nothing on total internal reflection
+--
+-- We use the (apparently, we have not benchmarked it) efficient
+-- method of Bec presented in Real Time Rendering formula 14.28
+-- (p. 627) to compute the refraction vector. This is an
+-- implementation of Snell's Law, not an approximation.
+--
+-- About `discriminant`: "Total internal reflection is indicated by a
+-- negative radiccand in the equation for cos(θ₂)" according to
+-- wikipedia/Snell's Law. k = cos(θ₂) in our function.
+let refract (wi: vec3) (n: vec3) (relative_ix: f32): maybe vec3 =
+  let l = vec3.scale (-1) wi
+  let w = relative_ix * vec3.dot l n
+  let discriminant = 1 + (w - relative_ix) * (w + relative_ix)
+  in if discriminant < 0
+     then #nothing
+     else let k = f32.sqrt discriminant
+          let t = vec3.scale (w - k) n vec3.- vec3.scale relative_ix l
+          in #just t
+
 -- Transmittance: The amount of light not absorbed by the hit object
 --
 -- NOTE: What we call transmittance here is called attenuation in
@@ -81,12 +102,27 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
     let scatter_sphere =
       vec3.scale fuzz (random_in_unit_sphere rng)
     let wo = vec3.normalise (reflected vec3.+ scatter_sphere)
-    in { transmit = albedo, wo }
+    -- If we exactly tangent the sphere, floating point errors may
+    -- cause the the reflected vector to actually point *inside* of
+    -- the sphere, so we need to handle that.
+    let transmit =
+      if vec3.dot wo h.normal > 0 then albedo else mkvec3 0 0 0
+    in { transmit, wo }
   case #lambertian { albedo } ->
     let target = h.pos vec3.+ h.normal
                               vec3.+ random_in_unit_sphere rng
     let wo = vec3.normalise (target vec3.- h.pos)
     in { transmit = albedo, wo }
+  case #dielectric { ref_ix } ->
+    let (outward_normal, relative_ix) =
+      if vec3.dot wi h.normal > 0
+      then (vec3.scale (-1) h.normal, ref_ix / 1.0)
+      else (h.normal, 1.0 / ref_ix)
+    in match refract wi outward_normal relative_ix
+       case #just refracted ->
+         { transmit = mkvec3 1 1 1, wo = refracted }
+       case #nothing ->
+         { transmit = mkvec3 0 0 0, wo = reflect wi h.normal }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -131,17 +167,12 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
     while bounces > 0 && vec3.norm throughput > 0.01
     do match hit_group bounds r world
        case #just hit' ->
-	 let { transmit, wo } = scatter r.dir hit' rng
+         let { transmit, wo } = scatter r.dir hit' rng
          let rng = advance_rng rng
          let throughput = transmit vec3.* throughput
          let eps = 0.001
-	 -- Fix surface acne
-	 --
-	 -- The reason we offset along by surface normal instead of wo
-	 -- is that if we exactly tangent the sphere, floating point
-	 -- errors may cause the the reflected vector to actually
-	 -- point *inside* of the sphere, so we need to handle that.
-	 let acne_offset = vec3.scale eps hit'.normal
+         -- Fix surface acne
+         let acne_offset = vec3.scale eps wo
          let r = mkray (hit'.pos vec3.+ acne_offset) wo
          in (throughput, r, rng, bounces - 1)
        case #nothing ->
@@ -179,21 +210,15 @@ let sample (w: i32, h: i32)
            (t: f32)
          : vec3 =
   let world =
-    [ #sphere { center = mkvec3 1.6 0 (-0.5)
-    	        , radius = 0.5
-    	        , mat = #metal { albedo = mkvec3 0.3 0 1, fuzz = 0 } }
-    , #sphere { center = mkvec3 0 0 (-1)
-    	        , radius = 0.5
-    	        , mat = #metal { albedo = mkvec3 1 0 0, fuzz = 0.6 } }
-    , #sphere { center = mkvec3 (-0.5) 0.5 (-2)
-    	        , radius = 0.7
-    	        , mat = #metal { albedo = mkvec3 1 1 1, fuzz = 0 } }
-    , #sphere { center = mkvec3 (0.2) 1.3 (-1.4)
-    	        , radius = 0.6
-    	        , mat = #metal { albedo = mkvec3 0.9 0.9 0.91, fuzz = 0.05 } }
-    , #sphere { center = mkvec3 8 0 (-10)
+    [ #sphere { center = mkvec3 1.6 0 (-0.8)
     	        , radius = 0.5
     	        , mat = #lambertian { albedo = mkvec3 1 1 1 } }
+    , #sphere { center = mkvec3 0 0 (-1.5)
+    	        , radius = 0.5
+    	        , mat = #metal { albedo = mkvec3 1 0 0, fuzz = 0.6 } }
+    , #sphere { center = mkvec3 0.4 0.2 (-0.6)
+    	        , radius = 0.5
+    	        , mat = #dielectric { ref_ix = 1.33 } }
     , #sphere { center = mkvec3 0 (-400.4) (-1)
     	        , radius = 400
       	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 } } ]
