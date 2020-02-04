@@ -32,6 +32,7 @@ type material
   = #metal { albedo: vec3, fuzz: f32 }
   | #lambertian { albedo: vec3 }
   | #dielectric { ref_ix: f32 }
+  | #emitter { emission: vec3 }
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
@@ -139,6 +140,10 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
         else reflect wi h.normal
       case #nothing -> reflect wi h.normal
     in { transmit = mkvec3 1 1 1, wo }
+  case #emitter { emission } ->
+    let target = h.pos vec3.+ h.normal
+                       vec3.+ random_in_unit_sphere rng
+    in { transmit = emission, wo = vec3.normalise (target vec3.- h.pos) }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -233,6 +238,9 @@ let sample (w: i32, h: i32)
     [ #sphere { center = mkvec3 1.6 0 (-0.8)
     	        , radius = 0.5
     	        , mat = #lambertian { albedo = mkvec3 1 1 1 } }
+    , #sphere { center = mkvec3 0 2 (-1)
+    	        , radius = 0.3
+    	        , mat = #emitter { emission = mkvec3 10 10 10 } }
     , #sphere { center = mkvec3 0 0 (-1.5)
     	        , radius = 0.5
     	        , mat = #metal { albedo = mkvec3 1 0.6 0, fuzz = 0.6 } }
