@@ -63,6 +63,12 @@ let random_in_unit_sphere (rng: rnge): vec3 =
        in (v, rng, n - 1)
   in v
 
+-- TODO: Glossy reflections. Check out wikipedia/Schlick's
+-- approximation. Use halfway vector? Rest of the microfacet model.
+let schlick (wi: vec3) (normal: vec3) (n1: f32) (n2: f32): f32 =
+  let r0 = let x = (n1 - n2) / (n1 + n2) in x * x
+  in r0 + (1 - r0) * (1 + vec3.dot normal wi)**5
+
 let reflect (wi: vec3) (n: vec3): vec3 =
   wi vec3.- vec3.scale (2 * vec3.dot wi n) n
 
@@ -102,9 +108,12 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
     let scatter_sphere =
       vec3.scale fuzz (random_in_unit_sphere rng)
     let wo = vec3.normalise (reflected vec3.+ scatter_sphere)
-    -- If we exactly tangent the sphere, floating point errors may
-    -- cause the the reflected vector to actually point *inside* of
-    -- the sphere, so we need to handle that.
+    -- If we hit a fuzzy metal sphere close to the edge, i.e. tangent
+    -- / almost tangent it, the scatter sphere we "create" may
+    -- intersect the metal sphere, and we may sample a wo that is
+    -- actually pointing inwards. We're not sure what the real-life
+    -- equivalence is, but as the RTi1W did, we simply return black in
+    -- those cases, treating it as if the sphere absorbed the ray.
     let transmit =
       if vec3.dot wo h.normal > 0 then albedo else mkvec3 0 0 0
     in { transmit, wo }
@@ -114,15 +123,22 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
     let wo = vec3.normalise (target vec3.- h.pos)
     in { transmit = albedo, wo }
   case #dielectric { ref_ix } ->
-    let (outward_normal, relative_ix) =
+    let (outward_normal, n1, n2) =
       if vec3.dot wi h.normal > 0
-      then (vec3.scale (-1) h.normal, ref_ix / 1.0)
-      else (h.normal, 1.0 / ref_ix)
-    in match refract wi outward_normal relative_ix
-       case #just refracted ->
-         { transmit = mkvec3 1 1 1, wo = refracted }
-       case #nothing ->
-         { transmit = mkvec3 0 0 0, wo = reflect wi h.normal }
+      then (vec3.scale (-1) h.normal, ref_ix, 1.0)
+      else (h.normal, 1.0, ref_ix)
+    let relative_ix = n1 / n2
+    let (_, russian_roulette) = dist.rand (0,1) rng
+    -- TODO: Do we really need a nothing case here? Seems like schlick
+    -- could immediately tell us if there's total internal reflection.
+    let wo =
+      match refract wi outward_normal relative_ix
+      case #just refracted ->
+        if russian_roulette >= schlick wi outward_normal n1 n2
+        then refracted
+        else reflect wi h.normal
+      case #nothing -> reflect wi h.normal
+    in { transmit = mkvec3 1 1 1, wo }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -171,8 +187,12 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
          let rng = advance_rng rng
          let throughput = transmit vec3.* throughput
          let eps = 0.001
+         let side = if vec3.dot wo hit'.normal >= 0 then 1 else (-1)
          -- Fix surface acne
-         let acne_offset = vec3.scale eps wo
+         --
+         -- NOTE: Don't just walk along `wo`, because then we get
+         -- strange artifacts for some materials at extreme angles.
+         let acne_offset = vec3.scale (side * eps) hit'.normal
          let r = mkray (hit'.pos vec3.+ acne_offset) wo
          in (throughput, r, rng, bounces - 1)
        case #nothing ->
@@ -215,13 +235,14 @@ let sample (w: i32, h: i32)
     	        , mat = #lambertian { albedo = mkvec3 1 1 1 } }
     , #sphere { center = mkvec3 0 0 (-1.5)
     	        , radius = 0.5
-    	        , mat = #metal { albedo = mkvec3 1 0 0, fuzz = 0.6 } }
+    	        , mat = #metal { albedo = mkvec3 1 0.6 0, fuzz = 0.6 } }
     , #sphere { center = mkvec3 0.4 0.2 (-0.6)
     	        , radius = 0.5
-    	        , mat = #dielectric { ref_ix = 1.33 } }
+    	        , mat = #dielectric { ref_ix = 1.6 } }
     , #sphere { center = mkvec3 0 (-400.4) (-1)
     	        , radius = 400
-      	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 } } ]
+      	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 }
+              } ]
   let wh = mkvec2 (f32.i32 w) (f32.i32 h)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
