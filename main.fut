@@ -44,7 +44,7 @@ type bounds = { tmin: f32, tmax: f32 }
 module rnge = minstd_rand
 type rnge = rnge.rng
 
-type camera = { dir: vec3, ratio: f32, origin: vec3 }
+type camera = { dir: vec3, origin: vec3 }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -199,22 +199,22 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
          (throughput vec3.* sky, r, rng, 0)
   in c
 
-let mk_camera (ratio: f32) (t: f32): camera =
-  { dir = mkvec3 0 0 (-1)
-  , ratio = ratio
-  , origin = mkvec3 (f32.sin (t * 2)) (0.1 + f32.cos t * 0.5) 0.5 }
-
 let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
 
-let get_ray (cam: camera) (coord: vec2): ray =
-  let world_up = mkvec3 0 1 0
+let world_up: vec3 = mkvec3 0 1 0
+
+let cam_right (cam: camera): vec3 =
+  vec3.normalise (vec3.cross cam.dir world_up)
+
+let cam_up (cam: camera): vec3 =
+  vec3.normalise (vec3.cross (cam_right cam) cam.dir)
+
+let get_ray (cam: camera) (ratio: f32) (coord: vec2): ray =
   let field_of_view = 80.0
   let f = (to_radians field_of_view) / 2.0
-  let cam_right = vec3.normalise (vec3.cross cam.dir world_up)
-  let cam_up = vec3.normalise (vec3.cross cam_right cam.dir)
   let a = vec3.scale (f32.cos f) cam.dir
-  let b = vec3.scale (f32.sin f) cam_up
-  let c = vec3.scale (f32.sin f * cam.ratio) cam_right
+  let b = vec3.scale (f32.sin f) (cam_up cam)
+  let c = vec3.scale (f32.sin f * ratio) (cam_right cam)
   let screen_bot_left = a vec3.- c vec3.- b
   let screen_x_dir = vec3.scale 2 (a vec3.- b vec3.- screen_bot_left)
   let screen_y_dir = vec3.scale 2 (a vec3.- c vec3.- screen_bot_left)
@@ -227,7 +227,7 @@ let sample (w: i32, h: i32)
            (j: i32, i: i32)
            (offset: vec2)
            (rng: rnge)
-           (t: f32)
+           (cam: camera)
          : vec3 =
   let world =
     [ #sphere { center = mkvec3 1.6 0 (-0.8)
@@ -247,14 +247,13 @@ let sample (w: i32, h: i32)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let ratio = f32.i32 w / f32.i32 h
-  let cam = mk_camera ratio t
-  let r = get_ray cam xy
+  let r = get_ray cam ratio xy
   in color r world rng
 
 let sample_all (n: i32)
                (w: i32, h: i32)
                (rng: rnge)
-               (time: f32)
+               (cam: camera)
              : (rnge, [][]argb.colour) =
   let rngs = rnge.split_rng n rng
   let rngss = map (rnge.split_rng (w * h)) rngs
@@ -264,7 +263,7 @@ let sample_all (n: i32)
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample (w, h) (j, i) offset rng time)
+    in (vec3./) (sample (w, h) (j, i) offset rng cam)
                 (mkvec3_repeat (f32.i32 n))
   let img = tabulate_2d h w <| \i j ->
               vcol_to_argb (reduce_comm
@@ -273,12 +272,17 @@ let sample_all (n: i32)
                               (map (sample' i j) rngss))
   in (advance_rng rng, img)
 
+let move_camera (cam: camera) (m: vec3): camera =
+  let axes = cam_up cam vec3.+ cam_right cam vec3.+ cam.dir
+  in cam with origin = cam.origin vec3.+ vec3.scale 0.1 m vec3.* axes
+
 module lys: lys with text_content = (i32, i32) = {
   type~ state = { time: f32
                 , dimensions: (i32, i32)
                 , rng: minstd_rand.rng
                 , img: [][]argb.colour
-                , samples: i32 }
+                , samples: i32
+                , cam: camera }
   let grab_mouse = false
 
   let init (seed: u32) (h: i32) (w: i32): state =
@@ -286,7 +290,9 @@ module lys: lys with text_content = (i32, i32) = {
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
     , img = tabulate_2d h w (\_ _ -> argb.black)
-    , samples = 1 }
+    , samples = 1
+    , cam = { dir = mkvec3 0 0 (-1)
+            , origin = mkvec3 0 0.1 0.5 }}
 
   let resize (h: i32) (w: i32) (s: state) =
     s with dimensions = (w, h)
@@ -296,14 +302,22 @@ module lys: lys with text_content = (i32, i32) = {
       case #step dt ->
         let n = s.samples
         let time = s.time + dt
-        let (rng, img) = sample_all n s.dimensions s.rng time
+        let (rng, img) = sample_all n s.dimensions s.rng s.cam
         in s with img = img with rng = rng with time = time
       case #keydown {key} ->
-        if key == SDLK_w
+        if key == SDLK_UP
         then s with samples = s.samples * 2
-        else if key == SDLK_s
+        else if key == SDLK_DOWN
         then s with samples =
           if s.samples < 2 then 1 else s.samples / 2
+        else if key == SDLK_w
+        then s with cam = move_camera s.cam (mkvec3 0 0 1)
+        else if key == SDLK_a
+        then s with cam = move_camera s.cam (mkvec3 (-1) 0 0)
+        else if key == SDLK_s
+        then s with cam = move_camera s.cam (mkvec3 0 0 (-1))
+        else if key == SDLK_d
+        then s with cam = move_camera s.cam (mkvec3 1 0 0)
         else s
       case _ -> s
 
