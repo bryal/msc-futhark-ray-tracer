@@ -24,9 +24,16 @@ module dist = uniform_real_distribution f32 minstd_rand
 
 type maybe 't = #nothing | #just t
 
-type hit = { t: f32, pos: vec3, normal: vec3 }
+type material =
+  -- TODO: Don't just supply albedo for red, green, and blue. Handle
+  -- the whole spectrum somehow!
+  --
+  -- Albedo ≈ Color
+  { albedo: vec3 }
 
-type sphere = { center: vec3, radius: f32 }
+type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
+
+type sphere = { center: vec3, radius: f32, mat: material }
 type geom = #sphere sphere
 type~ group = []geom
 
@@ -45,7 +52,7 @@ let random_in_unit_sphere (rng: rnge): vec3 =
   let (v, _, _) =
     -- NOTE: This `n` prevents us from getting stuck in seemingly
     -- infinite loops. Use a better algo.
-    loop (p, rng, n) = (mkvec3 1 1 1, rng, 4)
+    loop (p, rng, n) = (mkvec3 1 1 1, rng, 4u32)
     while vec3.quadrance p >= 1 && n > 0
     do let (rng, x) = dist.rand (0,1) rng
        let (rng, y) = dist.rand (0,1) rng
@@ -53,6 +60,20 @@ let random_in_unit_sphere (rng: rnge): vec3 =
        let v = vec3.scale 2 (mkvec3 x y z) vec3.- mkvec3 1 1 1
        in (v, rng, n - 1)
   in v
+
+-- Transmittance: The amount of light not absorbed by the hit object
+--
+-- NOTE: What we call transmittance here is called attenuation in
+-- RTi1W, but that seemed inversed to us.
+--
+-- NOTE: In some literature, wi and wo are reversed, so wi is the
+-- direction for the incoming light from the sun, and wo is the
+-- outgoing vector towards the camera
+let scatter (wi: vec3) (h: hit) (rng: rnge)
+          : { transmit: vec3, wo: vec3 } =
+  let target = h.pos vec3.+ h.normal vec3.+ random_in_unit_sphere rng
+  let wo = vec3.normalise (target vec3.- h.pos)
+  in { transmit = h.mat.albedo, wo }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -66,7 +87,7 @@ let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let handle_root t =
     let pos = point_at_param r t
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
-    in #just { t, pos, normal }
+    in #just { t, pos, normal, mat = s.mat }
   in if discriminant > 0
      then if in_bounds root0 then handle_root root0
           else if in_bounds root1 then handle_root root1
@@ -96,14 +117,11 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
     while continue
     do match hit_group bounds r world
        case #just hit' ->
-         let target = hit'.pos
-                      vec3.+ hit'.normal
-                      vec3.+ random_in_unit_sphere rng
+	 let { transmit, wo } = scatter r.dir hit' rng
          let rng = advance_rng rng
-         let c = vec3.scale 0.5 c
+         let c = transmit vec3.* c
          let eps = 0.001
-         let wi = vec3.normalise (target vec3.- hit'.pos)
-         let r = mkray (hit'.pos vec3.+ vec3.scale eps wi) wi
+         let r = mkray (hit'.pos vec3.+ vec3.scale eps wo) wo
          in (c, r, rng, true)
        case #nothing ->
          (c, r, rng, false)
@@ -140,10 +158,18 @@ let sample (w: i32, h: i32)
            (t: f32)
          : vec3 =
   let world =
-    [ #sphere { center = mkvec3 0 0 (-1), radius = 0.5 }
-    , #sphere { center = mkvec3 (-0.5) 0.5 (-2), radius = 0.5 }
-    , #sphere { center = mkvec3 8 0 (-10), radius = 0.5 }
-    , #sphere { center = mkvec3 0 (-400.4) (-1), radius = 400 } ]
+    [ #sphere { center = mkvec3 0 0 (-1)
+	      , radius = 0.5
+	      , mat = { albedo = mkvec3 1 0 0 } }
+    , #sphere { center = mkvec3 (-0.5) 0.5 (-2)
+	      , radius = 0.7
+	      , mat = { albedo = mkvec3 1.0 1.0 1.0 } }
+    , #sphere { center = mkvec3 8 0 (-10)
+	      , radius = 0.5
+	      , mat = { albedo = mkvec3 0.8 0.9 1.0 } }
+    , #sphere { center = mkvec3 0 (-400.4) (-1)
+	      , radius = 400
+	      , mat = { albedo = mkvec3 0.2 0.8 0.3 } } ]
   let wh = mkvec2 (f32.i32 w) (f32.i32 h)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
