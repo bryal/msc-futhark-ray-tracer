@@ -24,12 +24,13 @@ module dist = uniform_real_distribution f32 minstd_rand
 
 type maybe 't = #nothing | #just t
 
-type material =
-  -- TODO: Don't just supply albedo for red, green, and blue. Handle
-  -- the whole spectrum somehow!
-  --
-  -- Albedo ≈ Color
-  { albedo: vec3 }
+-- TODO: Don't just supply albedo for red, green, and blue. Handle
+-- the whole spectrum somehow!
+--
+-- Albedo ≈ Color
+type material
+  = #metal { albedo: vec3, fuzz: f32 }
+  | #lambertian { albedo: vec3 }
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
@@ -61,6 +62,9 @@ let random_in_unit_sphere (rng: rnge): vec3 =
        in (v, rng, n - 1)
   in v
 
+let reflect (wi: vec3) (n: vec3): vec3 =
+  wi vec3.- vec3.scale (2 * vec3.dot wi n) n
+
 -- Transmittance: The amount of light not absorbed by the hit object
 --
 -- NOTE: What we call transmittance here is called attenuation in
@@ -71,9 +75,18 @@ let random_in_unit_sphere (rng: rnge): vec3 =
 -- outgoing vector towards the camera
 let scatter (wi: vec3) (h: hit) (rng: rnge)
           : { transmit: vec3, wo: vec3 } =
-  let target = h.pos vec3.+ h.normal vec3.+ random_in_unit_sphere rng
-  let wo = vec3.normalise (target vec3.- h.pos)
-  in { transmit = h.mat.albedo, wo }
+  match h.mat
+  case #metal { fuzz, albedo } ->
+    let reflected = reflect wi h.normal
+    let scatter_sphere =
+      vec3.scale fuzz (random_in_unit_sphere rng)
+    let wo = vec3.normalise (reflected vec3.+ scatter_sphere)
+    in { transmit = albedo, wo }
+  case #lambertian { albedo } ->
+    let target = h.pos vec3.+ h.normal
+                              vec3.+ random_in_unit_sphere rng
+    let wo = vec3.normalise (target vec3.- h.pos)
+    in { transmit = albedo, wo }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -111,20 +124,28 @@ let advance_rng (rng: rnge): rnge =
 
 let color (r: ray) (world: group) (rng: rnge): vec3 =
   let bounds = { tmin = 0.0, tmax = f32.highest }
+  let sky = mkvec3 0.8 0.9 1.0
   let (c, _, _, _) =
-    loop (c, r, rng, continue) =
-         (mkvec3 0.8 0.9 1.0, r, rng, true)
-    while continue
+    loop (throughput, r, rng, bounces) =
+         (mkvec3 1 1 1, r, rng, 8u32)
+    while bounces > 0 && vec3.norm throughput > 0.01
     do match hit_group bounds r world
        case #just hit' ->
 	 let { transmit, wo } = scatter r.dir hit' rng
          let rng = advance_rng rng
-         let c = transmit vec3.* c
+         let throughput = transmit vec3.* throughput
          let eps = 0.001
-         let r = mkray (hit'.pos vec3.+ vec3.scale eps wo) wo
-         in (c, r, rng, true)
+	 -- Fix surface acne
+	 --
+	 -- The reason we offset along by surface normal instead of wo
+	 -- is that if we exactly tangent the sphere, floating point
+	 -- errors may cause the the reflected vector to actually
+	 -- point *inside* of the sphere, so we need to handle that.
+	 let acne_offset = vec3.scale eps hit'.normal
+         let r = mkray (hit'.pos vec3.+ acne_offset) wo
+         in (throughput, r, rng, bounces - 1)
        case #nothing ->
-         (c, r, rng, false)
+         (throughput vec3.* sky, r, rng, 0)
   in c
 
 let mk_camera (ratio: f32) (t: f32): camera =
@@ -158,18 +179,24 @@ let sample (w: i32, h: i32)
            (t: f32)
          : vec3 =
   let world =
-    [ #sphere { center = mkvec3 0 0 (-1)
-	      , radius = 0.5
-	      , mat = { albedo = mkvec3 1 0 0 } }
+    [ #sphere { center = mkvec3 1.6 0 (-0.5)
+    	        , radius = 0.5
+    	        , mat = #metal { albedo = mkvec3 0.3 0 1, fuzz = 0 } }
+    , #sphere { center = mkvec3 0 0 (-1)
+    	        , radius = 0.5
+    	        , mat = #metal { albedo = mkvec3 1 0 0, fuzz = 0.6 } }
     , #sphere { center = mkvec3 (-0.5) 0.5 (-2)
-	      , radius = 0.7
-	      , mat = { albedo = mkvec3 1.0 1.0 1.0 } }
+    	        , radius = 0.7
+    	        , mat = #metal { albedo = mkvec3 1 1 1, fuzz = 0 } }
+    , #sphere { center = mkvec3 (0.2) 1.3 (-1.4)
+    	        , radius = 0.6
+    	        , mat = #metal { albedo = mkvec3 0.9 0.9 0.91, fuzz = 0.05 } }
     , #sphere { center = mkvec3 8 0 (-10)
-	      , radius = 0.5
-	      , mat = { albedo = mkvec3 0.8 0.9 1.0 } }
+    	        , radius = 0.5
+    	        , mat = #lambertian { albedo = mkvec3 1 1 1 } }
     , #sphere { center = mkvec3 0 (-400.4) (-1)
-	      , radius = 400
-	      , mat = { albedo = mkvec3 0.2 0.8 0.3 } } ]
+    	        , radius = 400
+      	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 } } ]
   let wh = mkvec2 (f32.i32 w) (f32.i32 h)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
