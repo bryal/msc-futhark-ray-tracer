@@ -56,6 +56,8 @@ let clamp (min: f32) (max: f32) (x: f32): f32 =
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
 
+let error_vec: vec3 = mkvec3 1000 0 1000
+
 let random_in_unit_sphere (rng: rnge): vec3 =
   let (rng, phi) = dist.rand (0, 2 * f32.pi) rng
   let (rng, costheta) = dist.rand (-1, 1) rng
@@ -149,8 +151,9 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
         else reflect wi h.normal
       case #nothing -> reflect wi h.normal
     in { transmit = mkvec3 1 1 1, wo }
-  case #emitter { emission } ->
-    { transmit = mkvec3 1000 0 1000, wo = mkvec3 0 0 0 }
+  -- Unreachable. Should be handled in `color`
+  case #emitter _ ->
+    { transmit = error_vec, wo = error_vec }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -194,7 +197,8 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
          (mkvec3 1 1 1, r, rng, 8u32)
     while bounces > 0 && vec3.norm throughput > 0.01
     do match hit_group bounds r world
-       case #just {mat = #emitter {emission}, normal, pos, t} ->
+       case #just { mat = #emitter { emission }
+                  , normal = _, pos = _, t = _ } ->
          (throughput vec3.* emission, r, rng, 0)
        case #just hit' ->
          let { transmit, wo } = scatter r.dir hit' rng
@@ -337,7 +341,7 @@ module lys: lys with text_content = (i32, i32, i32, f32, f32) = {
                 , cam: camera }
   let grab_mouse = false
 
-  let init (seed: u32) (h: i32) (w: i32): state =
+  let init (_seed: u32) (h: i32) (w: i32): state =
     { time = 0
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
