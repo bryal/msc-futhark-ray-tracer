@@ -45,7 +45,7 @@ type bounds = { tmin: f32, tmax: f32 }
 module rnge = minstd_rand
 type rnge = rnge.rng
 
-type camera = { dir: vec3, origin: vec3 }
+type camera = { pitch: f32, yaw: f32, origin: vec3 }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -208,16 +208,20 @@ let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
 
 let world_up: vec3 = mkvec3 0 1 0
 
+let cam_dir (cam: camera): vec3 =
+  vec3.normalise (mkvec3 (f32.sin cam.yaw) (f32.sin cam.pitch) (-(f32.cos cam.yaw)))
+
 let cam_right (cam: camera): vec3 =
-  vec3.normalise (vec3.cross cam.dir world_up)
+  vec3.normalise (vec3.cross (cam_dir cam) world_up)
 
 let cam_up (cam: camera): vec3 =
-  vec3.normalise (vec3.cross (cam_right cam) cam.dir)
+  vec3.normalise (vec3.cross (cam_right cam) (cam_dir cam))
+
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2): ray =
   let field_of_view = 80.0
   let f = (to_radians field_of_view) / 2.0
-  let a = vec3.scale (f32.cos f) cam.dir
+  let a = vec3.scale (f32.cos f) (cam_dir cam)
   let b = vec3.scale (f32.sin f) (cam_up cam)
   let c = vec3.scale (f32.sin f * ratio) (cam_right cam)
   let screen_bot_left = a vec3.- c vec3.- b
@@ -281,8 +285,16 @@ let sample_all (n: i32)
   in (advance_rng rng, img)
 
 let move_camera (cam: camera) (m: vec3): camera =
-  let axes = cam_up cam vec3.+ cam_right cam vec3.+ cam.dir
-  in cam with origin = cam.origin vec3.+ vec3.scale 0.1 m vec3.* axes
+  let cam_forward = vec3.normalise (cam_dir cam with y = 0)
+  in cam with origin = cam.origin
+                       vec3.+ vec3.scale (0.1*m.z) cam_forward
+                       vec3.+ vec3.scale (0.1*m.x) (cam_right cam)
+
+let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
+  cam with pitch = (f32.min (0.5*f32.pi)
+                            (f32.max (-0.5*f32.pi)
+                                     (cam.pitch + pitch)))
+      with yaw = (cam.yaw + yaw) % (2*f32.pi)
 
 module lys: lys with text_content = (i32, i32) = {
   type~ state = { time: f32
@@ -299,7 +311,7 @@ module lys: lys with text_content = (i32, i32) = {
     , rng = minstd_rand.rng_from_seed [123]
     , img = tabulate_2d h w (\_ _ -> argb.black)
     , samples = 1
-    , cam = { dir = mkvec3 0 0 (-1)
+    , cam = { pitch = 0.0, yaw = 0.0
             , origin = mkvec3 0 0.1 0.5 }}
 
   let resize (h: i32) (w: i32) (s: state) =
@@ -313,9 +325,9 @@ module lys: lys with text_content = (i32, i32) = {
         let (rng, img) = sample_all n s.dimensions s.rng s.cam
         in s with img = img with rng = rng with time = time
       case #keydown {key} ->
-        if key == SDLK_UP
+        if key == SDLK_e
         then s with samples = s.samples * 2
-        else if key == SDLK_DOWN
+        else if key == SDLK_q
         then s with samples =
           if s.samples < 2 then 1 else s.samples / 2
         else if key == SDLK_w
@@ -326,6 +338,14 @@ module lys: lys with text_content = (i32, i32) = {
         then s with cam = move_camera s.cam (mkvec3 0 0 (-1))
         else if key == SDLK_d
         then s with cam = move_camera s.cam (mkvec3 1 0 0)
+        else if key == SDLK_UP
+        then s with cam = turn_camera s.cam (-0.1) 0.0
+        else if key == SDLK_DOWN
+        then s with cam = turn_camera s.cam 0.1 0.0
+        else if key == SDLK_RIGHT
+        then s with cam = turn_camera s.cam 0.0 0.1
+        else if key == SDLK_LEFT
+        then s with cam = turn_camera s.cam 0.0 (-0.1)
         else s
       case _ -> s
 
