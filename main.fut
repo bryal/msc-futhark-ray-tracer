@@ -45,7 +45,13 @@ type bounds = { tmin: f32, tmax: f32 }
 module rnge = minstd_rand
 type rnge = rnge.rng
 
-type camera = { pitch: f32, yaw: f32, origin: vec3 }
+type camera =
+  { pitch: f32, yaw: f32
+  , origin: vec3
+  , aperture: f32, focal_dist: f32 }
+
+let clamp (min: f32) (max: f32) (x: f32): f32 =
+  f32.max min (f32.min max x)
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -64,6 +70,17 @@ let random_in_unit_sphere (rng: rnge): vec3 =
        in (v, rng, n - 1)
   in v
 
+-- TODO: Gotta be a better way of sampling from a disk
+let random_in_unit_disk (rng: rnge): vec3 =
+  let (v, _, _) =
+    loop (p, rng, n) = (mkvec3 1 1 1, rng, 6u32)
+    while vec3.quadrance p >= 1 && n > 0
+    do let (rng, x) = dist.rand (0,1) rng
+       let (rng, y) = dist.rand (0,1) rng
+       let v = vec3.scale 2 (mkvec3 x y 0) vec3.- mkvec3 1 1 0
+       in (v, rng, n - 1)
+  in v
+ 
 -- TODO: Glossy reflections. Check out wikipedia/Schlick's
 -- approximation. Use halfway vector? Rest of the microfacet model.
 let schlick (wi: vec3) (normal: vec3) (n1: f32) (n2: f32): f32 =
@@ -219,19 +236,29 @@ let cam_up (cam: camera): vec3 =
   vec3.normalise (vec3.cross (cam_right cam) (cam_dir cam))
 
 
-let get_ray (cam: camera) (ratio: f32) (coord: vec2): ray =
+let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
+  let lens_radius = cam.aperture / 2
   let field_of_view = 80.0
-  let f = (to_radians field_of_view) / 2.0
-  let a = vec3.scale (f32.cos f) (cam_dir cam)
-  let b = vec3.scale (f32.sin f) (cam_up cam)
-  let c = vec3.scale (f32.sin f * ratio) (cam_right cam)
-  let screen_bot_left = a vec3.- c vec3.- b
-  let screen_x_dir = vec3.scale 2 (a vec3.- b vec3.- screen_bot_left)
-  let screen_y_dir = vec3.scale 2 (a vec3.- c vec3.- screen_bot_left)
-  in mkray cam.origin
-           (screen_bot_left
-            vec3.+ vec3.scale coord.x screen_x_dir
-            vec3.+ vec3.scale coord.y screen_y_dir)
+  let half_height = f32.tan ((to_radians field_of_view) / 2.0)
+  let half_width = ratio * half_height
+  let (w, u, v) =
+    (vec3.scale (-1) (cam_dir cam), cam_right cam, cam_up cam)
+  let focus_dist = cam.focal_dist
+  let lower_left_corner =
+    cam.origin
+    vec3.- vec3.scale (half_width * focus_dist) u
+    vec3.- vec3.scale (half_height * focus_dist) v
+    vec3.- vec3.scale focus_dist w
+  let horizontal = vec3.scale (2 * half_width * focus_dist) u
+  let vertical = vec3.scale (2 * half_height * focus_dist) v
+  let lens = vec3.scale lens_radius (random_in_unit_disk rng)
+  let lens_offset = vec3.scale lens.x u vec3.+ vec3.scale lens.y v
+  let origin = cam.origin vec3.+ lens_offset
+  in mkray origin
+           (lower_left_corner
+            vec3.+ vec3.scale coord.x horizontal
+            vec3.+ vec3.scale coord.y vertical
+            vec3.- origin)
 
 let sample (w: i32, h: i32)
            (j: i32, i: i32)
@@ -260,7 +287,7 @@ let sample (w: i32, h: i32)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let ratio = f32.i32 w / f32.i32 h
-  let r = get_ray cam ratio xy
+  let r = get_ray cam ratio xy rng
   in color r world rng
 
 let sample_all (n: i32)
@@ -304,12 +331,10 @@ let move_camera (cam: camera) (m: vec3): camera =
                        vec3.+ vec3.scale (0.1*m.y) world_up
 
 let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
-  cam with pitch = (f32.min (0.5*f32.pi)
-                            (f32.max (-0.5*f32.pi)
-                                     (cam.pitch + pitch)))
+  cam with pitch = clamp (-0.5*f32.pi) (0.5*f32.pi) (cam.pitch + pitch)
       with yaw = (cam.yaw + yaw) % (2*f32.pi)
 
-module lys: lys with text_content = (i32, i32, i32) = {
+module lys: lys with text_content = (i32, i32, i32, f32, f32) = {
   type~ state = { time: f32
                 , dimensions: (i32, i32)
                 , rng: minstd_rand.rng
@@ -329,7 +354,8 @@ module lys: lys with text_content = (i32, i32, i32) = {
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 0.1 0.5 }}
+            , origin = mkvec3 0 0.1 0.5
+            , aperture = 0.5, focal_dist = 1.5 }}
 
   let resize (h: i32) (w: i32) (s: state) =
     s with dimensions = (w, h) with mode = false
@@ -374,18 +400,31 @@ module lys: lys with text_content = (i32, i32, i32) = {
         then s with cam = move_camera s.cam (mkvec3 0 (-1) 0)
         else if key == SDLK_SPACE
         then s with mode = !s.mode
+        else if key == SDLK_i
+        then s with cam =
+          (s.cam with aperture = f32.min 2 (s.cam.aperture + 0.08))
+        else if key == SDLK_k
+        then s with cam =
+          (s.cam with aperture = f32.max 0 (s.cam.aperture - 0.08))
+        else if key == SDLK_o
+        then s with cam =
+          (s.cam with focal_dist = s.cam.focal_dist * 1.14)
+        else if key == SDLK_l
+        then s with cam =
+          (s.cam with focal_dist = f32.max 0.1 (s.cam.focal_dist / 1.14)) 
         else s
       case _ -> s
 
   let render (s: state) = map (map vcol_to_argb) s.img
 
   let text_format () =
-    "FPS: %d\nGOTTA GO FAST\nSAMPLES: %d\nN ACCUM FRAMES: %d"
+    "FPS: %d\nSAMPLES: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f"
 
-  type text_content = (i32, i32, i32)
+  type text_content = (i32, i32, i32, f32, f32)
 
   let text_content (render_duration: f32) (s: state): text_content =
-      (t32 render_duration, s.samples, s.n_frames)
+    (t32 render_duration, s.samples, s.n_frames, s.cam.aperture
+    , s.cam.focal_dist)
 
   let text_colour = const argb.yellow
 }
