@@ -267,7 +267,7 @@ let sample_all (n: i32)
                (w: i32, h: i32)
                (rng: rnge)
                (cam: camera)
-             : (rnge, [][]argb.colour) =
+             : (rnge, [][]vec3) =
   let rngs = rnge.split_rng n rng
   let rngss = map (rnge.split_rng (w * h)) rngs
   let sample' i j rngs =
@@ -279,17 +279,29 @@ let sample_all (n: i32)
     in (vec3./) (sample (w, h) (j, i) offset rng cam)
                 (mkvec3_repeat (f32.i32 n))
   let img = tabulate_2d h w <| \i j ->
-              vcol_to_argb (reduce_comm
-                              (vec3.+)
-                              (mkvec3_repeat 0)
-                              (map (sample' i j) rngss))
+              reduce_comm (vec3.+)
+                          (mkvec3_repeat 0)
+                          (map (sample' i j) rngss)
   in (advance_rng rng, img)
 
+let sample_accum (n_frames: i32)
+                 (dims: (i32, i32))
+                 (rng: rnge)
+                 (cam: camera)
+                 (img_acc: [][]vec3)
+               : (rnge, [][]vec3) =                          
+  let (rng, img_new) = sample_all 1 dims rng cam
+  let nf = r32 n_frames
+  let merge acc c = vec3.scale ((nf - 1) / nf) acc
+                    vec3.+ vec3.scale (1 / nf) c
+  in (rng, map2 (map2 merge) img_acc img_new)
+  
 let move_camera (cam: camera) (m: vec3): camera =
   let cam_forward = vec3.normalise (cam_dir cam with y = 0)
   in cam with origin = cam.origin
                        vec3.+ vec3.scale (0.1*m.z) cam_forward
                        vec3.+ vec3.scale (0.1*m.x) (cam_right cam)
+                       vec3.+ vec3.scale (0.1*m.y) world_up
 
 let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
   cam with pitch = (f32.min (0.5*f32.pi)
@@ -297,12 +309,14 @@ let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
                                      (cam.pitch + pitch)))
       with yaw = (cam.yaw + yaw) % (2*f32.pi)
 
-module lys: lys with text_content = (i32, i32) = {
+module lys: lys with text_content = (i32, i32, i32) = {
   type~ state = { time: f32
                 , dimensions: (i32, i32)
                 , rng: minstd_rand.rng
-                , img: [][]argb.colour
+                , img: [][]vec3
                 , samples: i32
+                , n_frames: i32
+                , mode: bool
                 , cam: camera }
   let grab_mouse = false
 
@@ -310,21 +324,28 @@ module lys: lys with text_content = (i32, i32) = {
     { time = 0
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
-    , img = tabulate_2d h w (\_ _ -> argb.black)
+    , img = tabulate_2d h w (\_ _ -> mkvec3 0 0 0)
     , samples = 1
+    , n_frames = 1
+    , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
             , origin = mkvec3 0 0.1 0.5 }}
 
   let resize (h: i32) (w: i32) (s: state) =
-    s with dimensions = (w, h)
+    s with dimensions = (w, h) with mode = false
 
   let event (e: event) (s: state) =
     match e
       case #step dt ->
-        let n = s.samples
         let time = s.time + dt
-        let (rng, img) = sample_all n s.dimensions s.rng s.cam
+        let ((rng, img), n_frames) =
+          if s.mode
+          then (sample_accum s.n_frames s.dimensions s.rng s.cam s.img
+               ,s.n_frames + 1)
+          else (sample_all s.samples s.dimensions s.rng s.cam
+               ,1)
         in s with img = img with rng = rng with time = time
+             with n_frames = n_frames
       case #keydown {key} ->
         if key == SDLK_e
         then s with samples = s.samples * 2
@@ -347,18 +368,24 @@ module lys: lys with text_content = (i32, i32) = {
         then s with cam = turn_camera s.cam 0.0 0.1
         else if key == SDLK_LEFT
         then s with cam = turn_camera s.cam 0.0 (-0.1)
+        else if key == SDLK_x
+        then s with cam = move_camera s.cam (mkvec3 0 1 0)
+        else if key == SDLK_z
+        then s with cam = move_camera s.cam (mkvec3 0 (-1) 0)
+        else if key == SDLK_SPACE
+        then s with mode = !s.mode
         else s
       case _ -> s
 
-  let render (s: state) = s.img
+  let render (s: state) = map (map vcol_to_argb) s.img
 
   let text_format () =
-    "FPS: %d\nGOTTA GO FAST\nSAMPLES: %d"
+    "FPS: %d\nGOTTA GO FAST\nSAMPLES: %d\nN ACCUM FRAMES: %d"
 
-  type text_content = (i32, i32)
+  type text_content = (i32, i32, i32)
 
   let text_content (render_duration: f32) (s: state): text_content =
-      (t32 render_duration, s.samples)
+      (t32 render_duration, s.samples, s.n_frames)
 
   let text_colour = const argb.yellow
 }
