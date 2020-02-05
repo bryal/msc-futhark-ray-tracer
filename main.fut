@@ -56,30 +56,22 @@ let clamp (min: f32) (max: f32) (x: f32): f32 =
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
 
--- TODO: Improve. Do this in deterministic constant time.
 let random_in_unit_sphere (rng: rnge): vec3 =
-  let (v, _, _) =
-    -- NOTE: This `n` prevents us from getting stuck in seemingly
-    -- infinite loops. Use a better algo.
-    loop (p, rng, n) = (mkvec3 1 1 1, rng, 4u32)
-    while vec3.quadrance p >= 1 && n > 0
-    do let (rng, x) = dist.rand (0,1) rng
-       let (rng, y) = dist.rand (0,1) rng
-       let (rng, z) = dist.rand (0,1) rng
-       let v = vec3.scale 2 (mkvec3 x y z) vec3.- mkvec3 1 1 1
-       in (v, rng, n - 1)
-  in v
+  let (rng, phi) = dist.rand (0, 2 * f32.pi) rng
+  let (rng, costheta) = dist.rand (-1, 1) rng
+  let (_, u) = dist.rand (0, 1) rng
+  let theta = f32.acos costheta
+  let r = u ** (1.0 / 3.0f32)
+  let x = f32.sin theta * f32.cos phi
+  let y = f32.sin theta * f32.sin phi
+  let z = f32.cos theta
+  in vec3.scale r (mkvec3 x y z)
 
--- TODO: Gotta be a better way of sampling from a disk
 let random_in_unit_disk (rng: rnge): vec3 =
-  let (v, _, _) =
-    loop (p, rng, n) = (mkvec3 1 1 1, rng, 6u32)
-    while vec3.quadrance p >= 1 && n > 0
-    do let (rng, x) = dist.rand (0,1) rng
-       let (rng, y) = dist.rand (0,1) rng
-       let v = vec3.scale 2 (mkvec3 x y 0) vec3.- mkvec3 1 1 0
-       in (v, rng, n - 1)
-  in v
+  let (rng, theta) = dist.rand (0, 2 * f32.pi) rng
+  let (_, u) = dist.rand (0, 1) rng
+  let r = f32.sqrt u
+  in vec3.scale r (mkvec3 (f32.cos theta) (f32.sin theta) 0)
  
 -- TODO: Glossy reflections. Check out wikipedia/Schlick's
 -- approximation. Use halfway vector? Rest of the microfacet model.
