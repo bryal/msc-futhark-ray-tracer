@@ -141,9 +141,7 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
       case #nothing -> reflect wi h.normal
     in { transmit = mkvec3 1 1 1, wo }
   case #emitter { emission } ->
-    let target = h.pos vec3.+ h.normal
-                       vec3.+ random_in_unit_sphere rng
-    in { transmit = emission, wo = vec3.normalise (target vec3.- h.pos) }
+    { transmit = mkvec3 1000 0 1000, wo = mkvec3 0 0 0 }
 
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
@@ -187,6 +185,8 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
          (mkvec3 1 1 1, r, rng, 8u32)
     while bounces > 0 && vec3.norm throughput > 0.01
     do match hit_group bounds r world
+       case #just {mat = #emitter {emission}, normal, pos, t} ->
+         (throughput vec3.* emission, r, rng, 0)
        case #just hit' ->
          let { transmit, wo } = scatter r.dir hit' rng
          let rng = advance_rng rng
