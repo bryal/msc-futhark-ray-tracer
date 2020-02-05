@@ -209,7 +209,8 @@ let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
 let world_up: vec3 = mkvec3 0 1 0
 
 let cam_dir (cam: camera): vec3 =
-  vec3.normalise (mkvec3 (f32.sin cam.yaw) (f32.sin cam.pitch) (-(f32.cos cam.yaw)))
+  vec3.normalise
+    (mkvec3 (f32.sin cam.yaw) (f32.sin cam.pitch) (-(f32.cos cam.yaw)))
 
 let cam_right (cam: camera): vec3 =
   vec3.normalise (vec3.cross (cam_dir cam) world_up)
