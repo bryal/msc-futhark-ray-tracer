@@ -261,28 +261,8 @@ let sample (w: i32, h: i32)
            (offset: vec2)
            (rng: rnge)
            (cam: camera)
+           (world: group)
          : vec3 =
-  let world =
-    [ #sphere { center = mkvec3 1.6 0 (-0.8)
-    	        , radius = 0.5
-    	        , mat = #lambertian { albedo = mkvec3 1 1 1 } }
-    , #sphere { center = mkvec3 0 2 (-1)
-    	        , radius = 0.3
-    	        , mat = #emitter { emission = mkvec3 10 10 10 } }
-    , #sphere { center = mkvec3 0 0 (-1.5)
-    	        , radius = 0.5
-    	        , mat = #metal { albedo = mkvec3 1 0.6 0, fuzz = 0.6 } }
-    , #sphere { center = mkvec3 0.4 0.2 (-0.6)
-    	        , radius = 0.5
-    	        , mat = #dielectric { ref_ix = 1.6 } }
-    , #sphere { center = mkvec3 0 (-400.4) (-1)
-    	        , radius = 400
-      	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 }
-              }
-    , #triangle { a = mkvec3 (-1) 0.3 (-2.2)
-                , b = mkvec3 1    0.3 (-2.2)
-                , c = mkvec3 0    1   (-2.5)
-                , mat = #lambertian { albedo = mkvec3 1.0 0.8 0.8 }} ]
   let wh = mkvec2 (f32.i32 w) (f32.i32 h)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
@@ -294,6 +274,7 @@ let sample_all (n: i32)
                (w: i32, h: i32)
                (rng: rnge)
                (cam: camera)
+               (world: group)
              : (rnge, [][]vec3) =
   let rngs = rnge.split_rng n rng
   let rngss = map (rnge.split_rng (w * h)) rngs
@@ -303,7 +284,7 @@ let sample_all (n: i32)
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample (w, h) (j, i) offset rng cam)
+    in (vec3./) (sample (w, h) (j, i) offset rng cam world)
                 (mkvec3_repeat (f32.i32 n))
   let img = tabulate_2d h w <| \i j ->
               reduce_comm (vec3.+)
@@ -316,8 +297,9 @@ let sample_accum (n_frames: i32)
                  (rng: rnge)
                  (cam: camera)
                  (img_acc: [][]vec3)
+                 (world: group)
                : (rnge, [][]vec3) =
-  let (rng, img_new) = sample_all 1 dims rng cam
+  let (rng, img_new) = sample_all 1 dims rng cam world
   let nf = r32 n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
@@ -336,7 +318,17 @@ let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
                                      (cam.pitch + pitch)))
       with yaw = (cam.yaw + yaw) % (2*f32.pi)
 
-module lys: lys with text_content = (i32, i32, i32) = {
+let vec3_from_array (xs: [3]f32): vec3 =
+  { x = xs[0], y = xs[1], z = xs[2] }
+
+let parse_triangles (xs: []f32): []geom =
+  let mat = #metal { albedo = mkvec3 1 0.8 0, fuzz = 0.2 }
+  let f ys = let ys' = (map vec3_from_array ys)
+             in #triangle { a = ys'[0], b = ys'[1], c = ys'[2], mat }
+  in map f (unflatten_3d (length xs / 9) 3 3 xs)
+
+type text_content = (i32, i32, i32)
+module lys: lys with text_content = text_content = {
   type~ state = { time: f32
                 , dimensions: (i32, i32)
                 , rng: minstd_rand.rng
@@ -344,10 +336,11 @@ module lys: lys with text_content = (i32, i32, i32) = {
                 , samples: i32
                 , n_frames: i32
                 , mode: bool
-                , cam: camera }
+                , cam: camera
+                , world: group }
   let grab_mouse = false
 
-  let init (seed: u32) (h: i32) (w: i32): state =
+  let init (seed: u32) (h: i32) (w: i32) (data: []f32): state =
     { time = 0
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
@@ -356,7 +349,24 @@ module lys: lys with text_content = (i32, i32, i32) = {
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 0.1 0.5 }}
+              , origin = mkvec3 0 0.1 0.5 }
+    , world =
+        [ #sphere
+          { center = mkvec3 1.6 0 (-0.8), radius = 0.5
+    	    , mat = #lambertian { albedo = mkvec3 1 1 1 } }
+        , #sphere
+          { center = mkvec3 0 2 (-1), radius = 0.3
+    	    , mat = #emitter { emission = mkvec3 10 10 10 } }
+        , #sphere
+          { center = mkvec3 0 0 (-1.5), radius = 0.5
+    	    , mat = #metal { albedo = mkvec3 1 0.6 0, fuzz = 0.6 } }
+        , #sphere
+          { center = mkvec3 0.4 0.2 (-0.6), radius = 0.5
+    	    , mat = #dielectric { ref_ix = 1.6 } }
+        , #sphere
+          { center = mkvec3 0 (-400.4) (-1), radius = 400
+      	  , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 } }
+        ] ++ parse_triangles data }
 
   let resize (h: i32) (w: i32) (s: state) =
     s with dimensions = (w, h) with mode = false
@@ -367,9 +377,9 @@ module lys: lys with text_content = (i32, i32, i32) = {
         let time = s.time + dt
         let ((rng, img), n_frames) =
           if s.mode
-          then (sample_accum s.n_frames s.dimensions s.rng s.cam s.img
+          then (sample_accum s.n_frames s.dimensions s.rng s.cam s.img s.world
                ,s.n_frames + 1)
-          else (sample_all s.samples s.dimensions s.rng s.cam
+          else (sample_all s.samples s.dimensions s.rng s.cam s.world
                ,1)
         in s with img = img with rng = rng with time = time
              with n_frames = n_frames
@@ -409,7 +419,7 @@ module lys: lys with text_content = (i32, i32, i32) = {
   let text_format () =
     "FPS: %d\nGOTTA GO FAST\nSAMPLES: %d\nN ACCUM FRAMES: %d"
 
-  type text_content = (i32, i32, i32)
+  type text_content = text_content
 
   let text_content (render_duration: f32) (s: state): text_content =
       (t32 render_duration, s.samples, s.n_frames)
