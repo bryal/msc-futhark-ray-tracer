@@ -6,16 +6,13 @@
 #define _XOPEN_SOURCE
 #include "liblys.h"
 #include "main_printf.h"
+#include "load_obj.h"
 
 #include <inttypes.h>
 #include <assert.h>
 #include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
-
-
-uint32_t rust_fib(uint32_t);
-
 
 #define INITIAL_WIDTH 800
 #define INITIAL_HEIGHT 600
@@ -483,9 +480,6 @@ void init_sdl(struct lys_context *ctx, char* font_path) {
     ctx->font = TTF_OpenFont(ctx->font_path, (int)ctx->font_size);
     SDL_ASSERT(ctx->font != NULL);
 }
-
-void load_obj_data(size_t* num, float** data);
-void free_obj_data(float* data);
 
 int main(int argc, char** argv) {
     uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT, max_fps = 60;
