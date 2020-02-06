@@ -36,8 +36,9 @@ type material
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
+type triangle = { a: vec3, b: vec3, c: vec3, mat: material }
 type sphere = { center: vec3, radius: f32, mat: material }
-type geom = #sphere sphere
+type geom = #sphere sphere | #triangle triangle
 type~ group = []geom
 
 type bounds = { tmin: f32, tmax: f32 }
@@ -120,7 +121,7 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
     in { transmit, wo }
   case #lambertian { albedo } ->
     let target = h.pos vec3.+ h.normal
-                              vec3.+ random_in_unit_sphere rng
+                       vec3.+ random_in_unit_sphere rng
     let wo = vec3.normalise (target vec3.- h.pos)
     in { transmit = albedo, wo }
   case #dielectric { ref_ix } ->
@@ -143,6 +144,29 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
   case #emitter { emission } ->
     { transmit = mkvec3 1000 0 1000, wo = mkvec3 0 0 0 }
 
+let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
+
+let hit_triangle (bn: bounds) (ra: ray) (tr: triangle): maybe hit =
+  -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
+  let eps = 0.00001
+  let e1 = tr.b vec3.- tr.a
+  let e2 = tr.c vec3.- tr.a
+  let n = vec3.cross e1 e2
+  let a = -(vec3.dot n ra.dir)
+  in if a > -eps && a < eps then #nothing else
+  let s = ra.origin vec3.- tr.a
+  let m = vec3.cross s ra.dir
+  let { x = t, y = u, z = v } =
+    vec3.scale (1 / a)
+               (mkvec3 (vec3.dot n s)
+                       (vec3.dot m e2)
+                       (-(vec3.dot m e1)))
+  in if u < 0 || v < 0 || u + v > 1 || !(in_bounds bn t)
+     then #nothing
+     else let pos = point_at_param ra t
+          let normal = vec3.normalise n
+          in #just { t, pos, normal, mat = tr.mat }
+
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
   let a = 1 -- vec3.dot r.dir r.dir
@@ -151,20 +175,20 @@ let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let discriminant = b * b - 4 * a * c
   let root0 = (-b - f32.sqrt discriminant) / (2 * a)
   let root1 = (-b + f32.sqrt discriminant) / (2 * a)
-  let in_bounds t = t < bn.tmax && t > bn.tmin
   let handle_root t =
     let pos = point_at_param r t
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
     in #just { t, pos, normal, mat = s.mat }
   in if discriminant > 0
-     then if in_bounds root0 then handle_root root0
-          else if in_bounds root1 then handle_root root1
+     then if in_bounds bn root0 then handle_root root0
+          else if in_bounds bn root1 then handle_root root1
           else #nothing
      else #nothing
 
 let hit_geom (bn: bounds) (r: ray) (g: geom): maybe hit =
   match g
   case #sphere s -> hit_sphere bn r s
+  case #triangle t -> hit_triangle bn r t
 
 let hit_group (bn: bounds) (r: ray) (xs: group): maybe hit =
   let select_min_hit a b =
@@ -218,7 +242,6 @@ let cam_right (cam: camera): vec3 =
 let cam_up (cam: camera): vec3 =
   vec3.normalise (vec3.cross (cam_right cam) (cam_dir cam))
 
-
 let get_ray (cam: camera) (ratio: f32) (coord: vec2): ray =
   let field_of_view = 80.0
   let f = (to_radians field_of_view) / 2.0
@@ -255,7 +278,11 @@ let sample (w: i32, h: i32)
     , #sphere { center = mkvec3 0 (-400.4) (-1)
     	        , radius = 400
       	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 }
-              } ]
+              }
+    , #triangle { a = mkvec3 (-1) 0.3 (-2.2)
+                , b = mkvec3 1    0.3 (-2.2)
+                , c = mkvec3 0    1   (-2.5)
+                , mat = #lambertian { albedo = mkvec3 1.0 0.8 0.8 }} ]
   let wh = mkvec2 (f32.i32 w) (f32.i32 h)
   let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
@@ -289,13 +316,13 @@ let sample_accum (n_frames: i32)
                  (rng: rnge)
                  (cam: camera)
                  (img_acc: [][]vec3)
-               : (rnge, [][]vec3) =                          
+               : (rnge, [][]vec3) =
   let (rng, img_new) = sample_all 1 dims rng cam
   let nf = r32 n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
   in (rng, map2 (map2 merge) img_acc img_new)
-  
+
 let move_camera (cam: camera) (m: vec3): camera =
   let cam_forward = vec3.normalise (cam_dir cam with y = 0)
   in cam with origin = cam.origin
