@@ -1,4 +1,5 @@
 LYS_BACKEND?=opencl
+
 PROG_FUT_DEPS:=$(shell ls *.fut; find lib -name \*.fut)
 
 all: main
@@ -6,7 +7,7 @@ all: main
 NOWARN_CFLAGS=-std=c11 -O -DCL_TARGET_OPENCL_VERSION='220'
 CFLAGS?=$(NOWARN_CFLAGS)  -Wall -Wextra -Wconversion -pedantic -DLYS_BACKEND_$(LYS_BACKEND)
 BASE_LDFLAGS=-L./deps/SDL2/lib -lm -l:libSDL2.a -l:libSDL2_ttf.a -lfreetype -ldl -lpthread
-INCLUDE=-I. -I./deps/SDL2/include
+INCLUDE=-I. -I./rust-stuff -I./deps/SDL2/include
 
 OPENCL_LDFLAGS?=-lOpenCL
 
@@ -25,12 +26,13 @@ main:
 	futhark pkg sync
 	@make # The sync might have resulted in a new Makefile.
 else
-main: main_wrapper.o main_wrapper.h main_printf.h lys/liblys.c lys/liblys.h libload_obj.a
-	gcc lys/liblys.c main_wrapper.o libload_obj.a -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
+main: main_wrapper.o main_wrapper.h main_printf.h lys/liblys.c lys/liblys.h librust_stuff.a
+	gcc lys/liblys.c main_wrapper.o librust_stuff.a -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
 endif
 
-libload_obj.a: load_obj.rs
-	rustc load_obj.rs --crate-type staticlib --edition 2018
+librust_stuff.a: $(shell find rust-stuff/src -name \*.rs)
+	cd rust-stuff; cargo build --release
+	cp rust-stuff/target/release/librust_stuff.a ./
 
 main_printf.h: main_wrapper.c
 	python3 lys/gen_printf.py $@ $<
@@ -49,4 +51,4 @@ run: main
 	./main -r 100000
 
 clean:
-	rm -f main main.c main.h main_wrapper.* main_printf.h *.o libload_obj.a
+	rm -f main main.c main.h main_wrapper.* main_printf.h *.o librust_stuff.a

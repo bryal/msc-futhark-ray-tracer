@@ -1,0 +1,10 @@
+[package]
+name = "rust-stuff"
+version = "0.1.0"
+authors = ["Cool Kidz 2000"]
+edition = "2018"
+
+[dependencies]
+
+[lib]
+crate-type = ["staticlib"]

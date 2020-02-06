@@ -6,7 +6,7 @@
 #define _XOPEN_SOURCE
 #include "liblys.h"
 #include "main_printf.h"
-#include "load_obj.h"
+#include "rust_stuff.h"
 
 #include <inttypes.h>
 #include <assert.h>
