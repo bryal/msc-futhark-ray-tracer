@@ -12,7 +12,7 @@
 -- `lys_no_text`@mtype.
 
 -- | For convenience, re-export the colour module.
-open import "../../athas/matte/colour"
+open import "../lib/github.com/athas/matte/colour"
 
 -- | UTF-8 encoded string.  This is what is produced by string
 -- literals in Futhark code.

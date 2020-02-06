@@ -15,7 +15,7 @@ out_vars = ['out{}'.format(i) for i in range(len(types))]
 
 with open(out_file, 'w') as f:
     print('#include <stdio.h>', file=f)
-    print('#include "lib/github.com/diku-dk/lys/liblys.h"', file=f)
+    print('#include "lys/liblys.h"', file=f)
     print('', file=f)
     if len(types) == 0:
         print('#define UNUSED(x) (void)(x)', file=f)

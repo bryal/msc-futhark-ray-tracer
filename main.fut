@@ -1,4 +1,4 @@
-import "lib/github.com/diku-dk/lys/lys"
+import "lys/lys"
 import "lib/github.com/athas/vector/vspace"
 import "lib/github.com/diku-dk/cpprandom/random"
 

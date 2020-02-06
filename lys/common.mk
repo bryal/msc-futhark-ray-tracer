@@ -31,15 +31,15 @@ $(PROGNAME):
 	futhark pkg sync
 	@make # The sync might have resulted in a new Makefile.
 else
-$(PROGNAME): $(PROGNAME)_wrapper.o $(PROGNAME)_wrapper.h $(PROGNAME)_printf.h lib/github.com/diku-dk/lys/liblys.c lib/github.com/diku-dk/lys/liblys.h libload_obj.a
-	gcc lib/github.com/diku-dk/lys/liblys.c -I. -DPROGHEADER='"$(PROGNAME)_wrapper.h"' -DPRINTFHEADER='"$(PROGNAME)_printf.h"' $(PROGNAME)_wrapper.o -o $@ $(CFLAGS) $(LDFLAGS) -lload_obj -ldl -lpthread
+$(PROGNAME): $(PROGNAME)_wrapper.o $(PROGNAME)_wrapper.h $(PROGNAME)_printf.h lys/liblys.c lys/liblys.h libload_obj.a
+	gcc lys/liblys.c -I. -DPROGHEADER='"$(PROGNAME)_wrapper.h"' -DPRINTFHEADER='"$(PROGNAME)_printf.h"' $(PROGNAME)_wrapper.o -o $@ $(CFLAGS) $(LDFLAGS) -lload_obj -ldl -lpthread
 endif
 
 libload_obj.a: load_obj.rs
 	rustc load_obj.rs --crate-type staticlib --edition 2018
 
 $(PROGNAME)_printf.h: $(PROGNAME)_wrapper.c
-	python3 lib/github.com/diku-dk/lys/gen_printf.py $@ $<
+	python3 lys/gen_printf.py $@ $<
 
 # We do not want warnings and such for the generated code.
 $(PROGNAME)_wrapper.o: $(PROGNAME)_wrapper.c
@@ -48,7 +48,7 @@ $(PROGNAME)_wrapper.o: $(PROGNAME)_wrapper.c
 %.c: %.fut
 	futhark $(LYS_BACKEND) --library $<
 
-%_wrapper.fut: lib/github.com/diku-dk/lys/genlys.fut $(PROG_FUT_DEPS)
+%_wrapper.fut: lys/genlys.fut $(PROG_FUT_DEPS)
 	cat $< | sed 's/"lys"/"$(PROGNAME)"/' > $@
 
 run: $(PROGNAME)
