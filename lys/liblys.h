@@ -28,7 +28,6 @@ struct lys_context {
     bool grab_mouse;
     bool mouse_grabbed;
     float fps;
-    uint32_t max_fps;
     char* **sum_names;
 };
 

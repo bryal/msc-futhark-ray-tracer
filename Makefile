@@ -48,7 +48,7 @@ main_wrapper.o: main_wrapper.c
 	cat $< | sed 's/"lys"/"main"/' > $@
 
 run: main
-	./main -r 100000
+	./main
 
 clean:
 	rm -f main main.c main.h main_wrapper.* main_printf.h *.o librust_stuff.a

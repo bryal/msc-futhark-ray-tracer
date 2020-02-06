@@ -255,49 +255,8 @@ void sdl_loop(struct lys_context *ctx) {
 
         SDL_ASSERT(SDL_UpdateWindowSurface(ctx->wnd) == 0);
 
-        SDL_Delay((uint32_t) (1000.0 / ctx->max_fps - delta / 1000));
-
         handle_sdl_events(ctx);
     }
-}
-
-void do_bench(struct futhark_context *fut, uint32_t height, uint32_t width, uint32_t n, const char *operation, struct futhark_f32_1d* triangle_data) {
-    struct futhark_opaque_state *state;
-    int64_t start, end;
-    FUT_CHECK(fut, futhark_entry_init(fut, &state, (uint32_t)get_wall_time(), height, width, triangle_data));
-    futhark_context_sync(fut);
-    int do_step = 0, do_render = 0;
-
-    if (strstr(operation, "step") != NULL) {
-        do_step = 1;
-    }
-
-    if (strstr(operation, "render") != NULL) {
-        do_render = 1;
-    }
-
-    start = get_wall_time();
-    for (uint32_t i = 0; i < n; i++) {
-        if (do_step) {
-            struct futhark_opaque_state *new_state;
-            FUT_CHECK(fut, futhark_entry_step(fut, &new_state, 1.0f / (float)n, state));
-            futhark_free_opaque_state(fut, state);
-            state = new_state;
-        }
-        if (do_render) {
-            struct futhark_i32_2d *out_arr;
-            FUT_CHECK(fut, futhark_entry_render(fut, &out_arr, state));
-            FUT_CHECK(fut, futhark_free_i32_2d(fut, out_arr));
-        }
-    }
-    futhark_context_sync(fut);
-    end = get_wall_time();
-
-    printf("Rendered %d frames in %fs (%f FPS)\n",
-           n, ((double)end - (double)start) / 1000000.0,
-           (double)n / (((double)end - (double)start) / 1000000.0));
-
-    FUT_CHECK(fut, futhark_free_opaque_state(fut, state));
 }
 
 void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* triangle_data) {
@@ -311,7 +270,7 @@ void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* t
         flags |= SDL_WINDOW_RESIZABLE;
     }
     ctx->wnd =
-        SDL_CreateWindow("Lys",
+        SDL_CreateWindow("Gotta go fast! -- PROPERTTY OF VOLOVO VCARS DONT COPY THAT FLOPPY",
                          SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                          (int)ctx->width, (int)ctx->height, (uint32_t)flags);
     SDL_ASSERT(ctx->wnd != NULL);
@@ -482,7 +441,7 @@ void init_sdl(struct lys_context *ctx, char* font_path) {
 }
 
 int main(int argc, char** argv) {
-    uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT, max_fps = 60;
+    uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT;
     bool allow_resize = true;
     char *deviceopt = NULL;
     char *benchopt = NULL;
@@ -495,7 +454,6 @@ int main(int argc, char** argv) {
         puts("  -h INT  Set the initial height of the window.");
         puts("  -R      Disallow resizing the window.");
         puts("  -d DEV  Set the computation device.");
-        puts("  -r INT  Maximum frames per second.");
         puts("  -i      Select execution device interactively.");
         puts("  --help  Print this help and exit.");
         return 0;
@@ -518,13 +476,6 @@ int main(int argc, char** argv) {
                 exit(EXIT_FAILURE);
             }
             break;
-        case 'r':
-            max_fps = (uint32_t)atoi(optarg);
-            if (max_fps <= 0) {
-                fprintf(stderr, "'%s' is not a valid framerate.\n", optarg);
-                exit(EXIT_FAILURE);
-            }
-            break;
         case 'R':
             allow_resize = false;
             break;
@@ -533,15 +484,6 @@ int main(int argc, char** argv) {
             break;
         case 'i':
             interactive = 1;
-            break;
-        case 'b':
-            if (strcmp(optarg, "render") == 0 ||
-                strcmp(optarg, "step") == 0) {
-                benchopt = optarg;
-            } else {
-                fprintf(stderr, "Use -b <render|step>\n");
-                exit(EXIT_FAILURE);
-            }
             break;
         default:
             fprintf(stderr, "unknown option: %c\n", c);
@@ -572,7 +514,6 @@ int main(int argc, char** argv) {
     ctx.width = width;
     ctx.height = height;
     ctx.fps = 0;
-    ctx.max_fps = max_fps;
     init_sdl(&ctx, font_path);
 
     struct futhark_context_config* futcfg;
@@ -587,11 +528,7 @@ int main(int argc, char** argv) {
     struct futhark_f32_1d* fut_triangle_data =
         futhark_new_f32_1d(ctx.fut, triangle_data, (int64_t)num);
 
-    if (benchopt != NULL) {
-        do_bench(futctx, height, width, max_fps, benchopt, fut_triangle_data);
-    } else {
-        do_sdl(&ctx, allow_resize, fut_triangle_data);
-    }
+    do_sdl(&ctx, allow_resize, fut_triangle_data);
 
     free(font_path);
 
