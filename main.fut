@@ -256,51 +256,52 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2): ray =
             vec3.+ vec3.scale coord.x screen_x_dir
             vec3.+ vec3.scale coord.y screen_y_dir)
 
-let sample (w: i32, h: i32)
-           (j: i32, i: i32)
+let sample (w: u32, h: u32)
+           (j: u32, i: u32)
            (offset: vec2)
            (rng: rnge)
            (cam: camera)
            (world: group)
          : vec3 =
-  let wh = mkvec2 (f32.i32 w) (f32.i32 h)
-  let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
+  let wh = mkvec2 (f32.u32 w) (f32.u32 h)
+  let ji = mkvec2 (f32.u32 j) (f32.u32 h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
-  let ratio = f32.i32 w / f32.i32 h
+  let ratio = f32.u32 w / f32.u32 h
   let r = get_ray cam ratio xy
   in color r world rng
 
-let sample_all (n: i32)
-               (w: i32, h: i32)
+let sample_all (n: u32)
+               (w: u32, h: u32)
                (rng: rnge)
                (cam: camera)
                (world: group)
              : (rnge, [][]vec3) =
-  let rngs = rnge.split_rng n rng
-  let rngss = map (rnge.split_rng (w * h)) rngs
+  let rngs = rnge.split_rng (i32.u32 n) rng
+  let rngss = map (rnge.split_rng (i32.u32 (w * h))) rngs
   let sample' i j rngs =
-    let ix = i * w + j
+    let ix = i * i32.u32 w + j
     let rng = rngs[ix]
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample (w, h) (j, i) offset rng cam world)
-                (mkvec3_repeat (f32.i32 n))
-  let img = tabulate_2d h w <| \i j ->
+    in (vec3./) (sample (w, h) (u32.i32 j, u32.i32 i)
+                        offset rng cam world)
+                (mkvec3_repeat (f32.u32 n))
+  let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
               reduce_comm (vec3.+)
                           (mkvec3_repeat 0)
                           (map (sample' i j) rngss)
   in (advance_rng rng, img)
 
-let sample_accum (n_frames: i32)
-                 (dims: (i32, i32))
+let sample_accum (n_frames: u32)
+                 (dims: (u32, u32))
                  (rng: rnge)
                  (cam: camera)
                  (img_acc: [][]vec3)
                  (world: group)
                : (rnge, [][]vec3) =
   let (rng, img_new) = sample_all 1 dims rng cam world
-  let nf = r32 n_frames
+  let nf = f32.u32 n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
   in (rng, map2 (map2 merge) img_acc img_new)
@@ -327,24 +328,24 @@ let parse_triangles (xs: []f32): []geom =
              in #triangle { a = ys'[0], b = ys'[1], c = ys'[2], mat }
   in map f (unflatten_3d (length xs / 9) 3 3 xs)
 
-type text_content = (i32, i32, i32)
+type text_content = (u32, u32, u32)
 module lys: lys with text_content = text_content = {
   type~ state = { time: f32
-                , dimensions: (i32, i32)
+                , dimensions: (u32, u32)
                 , rng: minstd_rand.rng
                 , img: [][]vec3
-                , samples: i32
-                , n_frames: i32
+                , samples: u32
+                , n_frames: u32
                 , mode: bool
                 , cam: camera
                 , world: group }
   let grab_mouse = false
 
-  let init (seed: u32) (h: i32) (w: i32) (data: []f32): state =
+  let init (seed: u32) (h: u32) (w: u32) (data: []f32): state =
     { time = 0
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
-    , img = tabulate_2d h w (\_ _ -> mkvec3 0 0 0)
+    , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
     , samples = 1
     , n_frames = 1
     , mode = false
@@ -368,7 +369,7 @@ module lys: lys with text_content = text_content = {
       	  , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 } }
         ] ++ parse_triangles data }
 
-  let resize (h: i32) (w: i32) (s: state) =
+  let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false
 
   let event (e: event) (s: state) =
@@ -422,7 +423,7 @@ module lys: lys with text_content = text_content = {
   type text_content = text_content
 
   let text_content (render_duration: f32) (s: state): text_content =
-      (t32 render_duration, s.samples, s.n_frames)
+      (u32.f32 render_duration, s.samples, s.n_frames)
 
   let text_colour = const argb.yellow
 }

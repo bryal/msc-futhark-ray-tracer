@@ -35,8 +35,8 @@ static int64_t get_wall_time(void) {
     return time.tv_sec * 1000000 + time.tv_usec;
 }
 
-static int font_size_from_dimensions(int width, int height) {
-    int size, font_size;
+static uint32_t font_size_from_dimensions(uint32_t width, uint32_t height) {
+    uint32_t size, font_size;
     if (height < width) {
         size = height;
     } else {
@@ -51,7 +51,7 @@ static int font_size_from_dimensions(int width, int height) {
     return font_size;
 }
 
-void window_size_updated(struct lys_context *ctx, int newx, int newy) {
+void window_size_updated(struct lys_context *ctx, uint32_t newx, uint32_t newy) {
     // https://stackoverflow.com/a/40122002
     ctx->wnd_surface = SDL_GetWindowSurface(ctx->wnd);
     SDL_ASSERT(ctx->wnd_surface != NULL);
@@ -61,7 +61,7 @@ void window_size_updated(struct lys_context *ctx, int newx, int newy) {
 
     ctx->font_size = font_size_from_dimensions(ctx->width, ctx->height);
     TTF_CloseFont(ctx->font);
-    ctx->font = TTF_OpenFont(ctx->font_path, ctx->font_size);
+    ctx->font = TTF_OpenFont(ctx->font_path, (int)ctx->font_size);
     SDL_ASSERT(ctx->font != NULL);
 
     struct futhark_opaque_state *new_state;
@@ -81,12 +81,15 @@ void window_size_updated(struct lys_context *ctx, int newx, int newy) {
     if (ctx->surface != NULL) {
         SDL_FreeSurface(ctx->surface);
     }
-    ctx->surface = SDL_CreateRGBSurfaceFrom(ctx->data, ctx->width, ctx->height,
-                                            32, ctx->width * sizeof(uint32_t), 0xFF0000, 0xFF00, 0xFF, 0x00000000);
+    ctx->surface = SDL_CreateRGBSurfaceFrom(
+        ctx->data,
+        (int)ctx->width, (int)ctx->height,
+        32, (int)((size_t)ctx->width * sizeof(uint32_t)),
+        0xFF0000, 0xFF00, 0xFF, 0x00000000);
     SDL_ASSERT(ctx->surface != NULL);
 }
 
-void mouse_event(struct lys_context *ctx, Uint32 state, int x, int y) {
+void mouse_event(struct lys_context *ctx, uint32_t state, int x, int y) {
     // We ignore mouse events if we are running a program that would
     // like mouse grab, but where we have temporarily taken the mouse
     // back from it (to e.g. resize the window).
@@ -95,7 +98,7 @@ void mouse_event(struct lys_context *ctx, Uint32 state, int x, int y) {
     }
 
     struct futhark_opaque_state *new_state;
-    FUT_CHECK(ctx->fut, futhark_entry_mouse(ctx->fut, &new_state, state, x, y, ctx->state));
+    FUT_CHECK(ctx->fut, futhark_entry_mouse(ctx->fut, &new_state, (int32_t)state, x, y, ctx->state));
     futhark_free_opaque_state(ctx->fut, ctx->state);
     ctx->state = new_state;
 }
@@ -116,8 +119,8 @@ void handle_sdl_events(struct lys_context *ctx) {
             switch (event.window.event) {
             case SDL_WINDOWEVENT_RESIZED:
             {
-                int newx = (int)event.window.data1;
-                int newy = (int)event.window.data2;
+                uint32_t newx = (uint32_t)event.window.data1;
+                uint32_t newy = (uint32_t)event.window.data2;
                 window_size_updated(ctx, newx, newy);
                 break;
             }
@@ -141,9 +144,9 @@ void handle_sdl_events(struct lys_context *ctx) {
             }
 
             if (ctx->grab_mouse) {
-                mouse_event(ctx, 1<<(event.button.button-1), event.motion.xrel, event.motion.yrel);
+                mouse_event(ctx, (uint32_t)(1<<(event.button.button-1)), event.motion.xrel, event.motion.yrel);
             } else {
-                mouse_event(ctx, 1<<(event.button.button-1), event.motion.x, event.motion.y);
+                mouse_event(ctx, (uint32_t)(1<<(event.button.button-1)), event.motion.x, event.motion.y);
             }
             break;
         case SDL_MOUSEWHEEL:
@@ -185,7 +188,7 @@ void sdl_loop(struct lys_context *ctx) {
     while (ctx->running) {
         int64_t now = get_wall_time();
         float delta = ((float)(now - ctx->last_time))/1000000;
-        ctx->fps = (ctx->fps*0.9 + (1/delta)*0.1);
+        ctx->fps = (ctx->fps*0.9f + (1.0f/delta)*0.1f);
         ctx->last_time = now;
         struct futhark_opaque_state *new_state;
         FUT_CHECK(ctx->fut, futhark_entry_step(ctx->fut, &new_state, delta, ctx->state));
@@ -207,15 +210,15 @@ void sdl_loop(struct lys_context *ctx) {
                           futhark_entry_text_colour(ctx->fut, (int32_t*) &text_colour,
                                                     ctx->state));
                 SDL_Color sdl_text_colour =
-                    { .a = (text_colour >> 24) & 0xff,
-                      .r = (text_colour >> 16) & 0xff,
-                      .g = (text_colour >> 8) & 0xff,
+                    { .a = (uint8_t)(text_colour >> 24) & 0xff,
+                      .r = (uint8_t)(text_colour >> 16) & 0xff,
+                      .g = (uint8_t)(text_colour >> 8) & 0xff,
                       .b = text_colour & 0xff };
 
                 SDL_Surface *text_surface;
                 SDL_Rect offset_rect;
                 offset_rect.x = 10;
-                int y = 10;
+                uint32_t y = 10;
                 char* buffer = ctx->text_buffer;
                 while (true) {
                     char* buffer_start = buffer;
@@ -235,7 +238,7 @@ void sdl_loop(struct lys_context *ctx) {
                     if (*buffer_start != '\0') {
                         text_surface = TTF_RenderUTF8_Blended(ctx->font, buffer_start, sdl_text_colour);
                         SDL_ASSERT(text_surface != NULL);
-                        offset_rect.y = y;
+                        offset_rect.y = (int)y;
                         offset_rect.w = text_surface->w;
                         offset_rect.h = text_surface->h;
                         SDL_ASSERT(SDL_BlitSurface(text_surface, NULL,
@@ -255,16 +258,16 @@ void sdl_loop(struct lys_context *ctx) {
 
         SDL_ASSERT(SDL_UpdateWindowSurface(ctx->wnd) == 0);
 
-        SDL_Delay((int) (1000.0 / ctx->max_fps - delta / 1000));
+        SDL_Delay((uint32_t) (1000.0 / ctx->max_fps - delta / 1000));
 
         handle_sdl_events(ctx);
     }
 }
 
-void do_bench(struct futhark_context *fut, int height, int width, int n, const char *operation, struct futhark_f32_1d* triangle_data) {
+void do_bench(struct futhark_context *fut, uint32_t height, uint32_t width, uint32_t n, const char *operation, struct futhark_f32_1d* triangle_data) {
     struct futhark_opaque_state *state;
     int64_t start, end;
-    FUT_CHECK(fut, futhark_entry_init(fut, &state, (int32_t)get_wall_time(), height, width, triangle_data));
+    FUT_CHECK(fut, futhark_entry_init(fut, &state, (uint32_t)get_wall_time(), height, width, triangle_data));
     futhark_context_sync(fut);
     int do_step = 0, do_render = 0;
 
@@ -277,10 +280,10 @@ void do_bench(struct futhark_context *fut, int height, int width, int n, const c
     }
 
     start = get_wall_time();
-    for (int i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < n; i++) {
         if (do_step) {
             struct futhark_opaque_state *new_state;
-            FUT_CHECK(fut, futhark_entry_step(fut, &new_state, 1.0/n, state));
+            FUT_CHECK(fut, futhark_entry_step(fut, &new_state, 1.0f / (float)n, state));
             futhark_free_opaque_state(fut, state);
             state = new_state;
         }
@@ -294,8 +297,8 @@ void do_bench(struct futhark_context *fut, int height, int width, int n, const c
     end = get_wall_time();
 
     printf("Rendered %d frames in %fs (%f FPS)\n",
-           n, ((double)end-start)/1000000,
-           n / (((double)end-start)/1000000));
+           n, ((double)end - (double)start) / 1000000.0,
+           (double)n / (((double)end - (double)start) / 1000000.0));
 
     FUT_CHECK(fut, futhark_free_opaque_state(fut, state));
 }
@@ -304,7 +307,7 @@ void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* t
     struct futhark_context *fut = ctx->fut;
 
     ctx->last_time = get_wall_time();
-    futhark_entry_init(fut, &ctx->state, (int32_t)get_wall_time(), ctx->height, ctx->width, triangle_data);
+    futhark_entry_init(fut, &ctx->state, (uint32_t)get_wall_time(), ctx->height, ctx->width, triangle_data);
 
     int flags = 0;
     if (allow_resize) {
@@ -313,7 +316,7 @@ void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* t
     ctx->wnd =
         SDL_CreateWindow("Lys",
                          SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                         ctx->width, ctx->height, flags);
+                         (int)ctx->width, (int)ctx->height, (uint32_t)flags);
     SDL_ASSERT(ctx->wnd != NULL);
 
     window_size_updated(ctx, ctx->width, ctx->height);
@@ -329,7 +332,7 @@ void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* t
 
     struct futhark_u8_1d *text_format_array;
     FUT_CHECK(ctx->fut, futhark_entry_text_format(ctx->fut, &text_format_array));
-    size_t text_format_len = futhark_shape_u8_1d(ctx->fut, text_format_array)[0];
+    size_t text_format_len = (size_t)futhark_shape_u8_1d(ctx->fut, text_format_array)[0];
     ctx->text_format = malloc(sizeof(char) * (text_format_len + 1));
     assert(ctx->text_format != NULL);
     FUT_CHECK(ctx->fut, futhark_values_u8_1d(ctx->fut, text_format_array, (unsigned char*) ctx->text_format));
@@ -340,7 +343,7 @@ void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* t
     assert(ctx->sum_names != NULL);
 
     ctx->text_buffer_len = text_format_len;
-    size_t i_arg = -1;
+    size_t i_arg = (size_t)(-1);
     for (size_t i = 0; i < text_format_len; i++) {
         if (ctx->text_format[i] == '%' &&
             i + 1 < text_format_len && ctx->text_format[i + 1] != '%') {
@@ -477,7 +480,7 @@ void init_sdl(struct lys_context *ctx, char* font_path) {
 
     ctx->font_path = font_path;
     ctx->font_size = font_size_from_dimensions(ctx->width, ctx->height);
-    ctx->font = TTF_OpenFont(ctx->font_path, ctx->font_size);
+    ctx->font = TTF_OpenFont(ctx->font_path, (int)ctx->font_size);
     SDL_ASSERT(ctx->font != NULL);
 }
 
@@ -485,7 +488,7 @@ void load_obj_data(size_t* num, float** data);
 void free_obj_data(float* data);
 
 int main(int argc, char** argv) {
-    int width = INITIAL_WIDTH, height = INITIAL_HEIGHT, max_fps = 60;
+    uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT, max_fps = 60;
     bool allow_resize = true;
     char *deviceopt = NULL;
     char *benchopt = NULL;
@@ -508,21 +511,21 @@ int main(int argc, char** argv) {
     while ( (c = getopt(argc, argv, "w:h:r:Rd:b:i")) != -1) {
         switch (c) {
         case 'w':
-            width = atoi(optarg);
+            width = (uint32_t)atoi(optarg);
             if (width <= 0) {
                 fprintf(stderr, "'%s' is not a valid width.\n", optarg);
                 exit(EXIT_FAILURE);
             }
             break;
         case 'h':
-            height = atoi(optarg);
+            height = (uint32_t)atoi(optarg);
             if (height <= 0) {
                 fprintf(stderr, "'%s' is not a valid width.\n", optarg);
                 exit(EXIT_FAILURE);
             }
             break;
         case 'r':
-            max_fps = atoi(optarg);
+            max_fps = (uint32_t)atoi(optarg);
             if (max_fps <= 0) {
                 fprintf(stderr, "'%s' is not a valid framerate.\n", optarg);
                 exit(EXIT_FAILURE);

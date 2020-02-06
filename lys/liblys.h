@@ -15,9 +15,9 @@ struct lys_context {
     SDL_Surface *surface;
     TTF_Font *font;
     char* font_path;
-    int font_size;
-    int width;
-    int height;
+    uint32_t font_size;
+    uint32_t width;
+    uint32_t height;
     int32_t *data;
     int64_t last_time;
     bool running;
@@ -28,7 +28,7 @@ struct lys_context {
     bool grab_mouse;
     bool mouse_grabbed;
     float fps;
-    int max_fps;
+    uint32_t max_fps;
     char* **sum_names;
 };
 

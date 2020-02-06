@@ -8,9 +8,9 @@ module m = import "lys"
 
 type^ state = m.lys.state
 
-entry init (seed: u32) (h: i32) (w: i32) (data: []f32): state = m.lys.init seed h w data
+entry init (seed: u32) (h: u32) (w: u32) (data: []f32): state = m.lys.init seed h w data
 
-entry resize (h: i32) (w: i32) (s: state): state = m.lys.resize h w s
+entry resize (h: u32) (w: u32) (s: state): state = m.lys.resize h w s
 
 entry key (e: i32) (key: i32) (s: state): state =
   let e' = if e == 0 then #keydown {key} else #keyup {key}

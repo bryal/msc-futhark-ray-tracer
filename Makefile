@@ -3,7 +3,7 @@ PROG_FUT_DEPS:=$(shell ls *.fut; find lib -name \*.fut)
 
 all: main
 
-NOWARN_CFLAGS=-std=c11 -O
+NOWARN_CFLAGS=-std=c11 -O -DCL_TARGET_OPENCL_VERSION='220'
 CFLAGS?=$(NOWARN_CFLAGS)  -Wall -Wextra -Wconversion -pedantic -DLYS_BACKEND_$(LYS_BACKEND)
 BASE_LDFLAGS=-L./deps/SDL2/lib -lm -l:libSDL2.a -l:libSDL2_ttf.a -lfreetype -ldl -lpthread
 INCLUDE=-I. -I./deps/SDL2/include
