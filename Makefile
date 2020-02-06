@@ -31,7 +31,7 @@ main: main_wrapper.o main_wrapper.h main_printf.h lys/liblys.c lys/liblys.h libr
 endif
 
 librust_stuff.a: $(shell find rust-stuff/src -name \*.rs)
-	cd rust-stuff; cargo build --release
+	cd rust-stuff; cargo build --lib --release
 	cp rust-stuff/target/release/librust_stuff.a ./
 
 main_printf.h: main_wrapper.c

@@ -5,6 +5,7 @@ authors = ["Cool Kidz 2000"]
 edition = "2018"
 
 [dependencies]
+tobj = "0.1.11"
 
 [lib]
 crate-type = ["staticlib"]
