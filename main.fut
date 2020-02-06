@@ -323,7 +323,7 @@ let vec3_from_array (xs: [3]f32): vec3 =
   { x = xs[0], y = xs[1], z = xs[2] }
 
 let parse_triangles (xs: []f32): []geom =
-  let mat = #metal { albedo = mkvec3 1 0.8 0, fuzz = 0.2 }
+  let mat = #lambertian { albedo = mkvec3 0.8 0.6 0.7 }
   let f ys = let ys' = (map vec3_from_array ys)
              in #triangle { a = ys'[0], b = ys'[1], c = ys'[2], mat }
   in map f (unflatten_3d (length xs / 9) 3 3 xs)
@@ -350,24 +350,8 @@ module lys: lys with text_content = text_content = {
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-              , origin = mkvec3 0 0.1 0.5 }
-    , world =
-        [ #sphere
-          { center = mkvec3 1.6 0 (-0.8), radius = 0.5
-    	    , mat = #lambertian { albedo = mkvec3 1 1 1 } }
-        , #sphere
-          { center = mkvec3 0 2 (-1), radius = 0.3
-    	    , mat = #emitter { emission = mkvec3 10 10 10 } }
-        , #sphere
-          { center = mkvec3 0 0 (-1.5), radius = 0.5
-    	    , mat = #metal { albedo = mkvec3 1 0.6 0, fuzz = 0.6 } }
-        , #sphere
-          { center = mkvec3 0.4 0.2 (-0.6), radius = 0.5
-    	    , mat = #dielectric { ref_ix = 1.6 } }
-        , #sphere
-          { center = mkvec3 0 (-400.4) (-1), radius = 400
-      	  , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 } }
-        ] ++ parse_triangles data }
+            , origin = mkvec3 0 0.7 1.7 }
+    , world = parse_triangles data }
 
   let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false

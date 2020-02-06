@@ -444,7 +444,6 @@ int main(int argc, char** argv) {
     uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT;
     bool allow_resize = true;
     char *deviceopt = NULL;
-    char *benchopt = NULL;
     int interactive = 0;
 
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
@@ -455,12 +454,14 @@ int main(int argc, char** argv) {
         puts("  -R      Disallow resizing the window.");
         puts("  -d DEV  Set the computation device.");
         puts("  -i      Select execution device interactively.");
+        puts("  -o OBJ  The object scene to render.");
         puts("  --help  Print this help and exit.");
         return 0;
     }
 
     int c;
-    while ( (c = getopt(argc, argv, "w:h:r:Rd:b:i")) != -1) {
+    char* obj_path = "assets/CornellBox-Original.obj";
+    while ( (c = getopt(argc, argv, "w:h:Rd:i:o:")) != -1) {
         switch (c) {
         case 'w':
             width = (uint32_t)atoi(optarg);
@@ -485,6 +486,11 @@ int main(int argc, char** argv) {
         case 'i':
             interactive = 1;
             break;
+        case 'o': {
+            size_t l = strlen(optarg);
+            obj_path = (char*)malloc(l + 1);
+            strcpy(obj_path, optarg);
+        } break;
         default:
             fprintf(stderr, "unknown option: %c\n", c);
             exit(EXIT_FAILURE);
@@ -524,7 +530,7 @@ int main(int argc, char** argv) {
 
     size_t num;
     float* triangle_data;
-    load_obj_data(&num, &triangle_data);
+    load_obj_data(obj_path, &num, &triangle_data);
     struct futhark_f32_1d* fut_triangle_data =
         futhark_new_f32_1d(ctx.fut, triangle_data, (int64_t)num);
 
