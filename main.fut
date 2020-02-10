@@ -28,11 +28,12 @@ type maybe 't = #nothing | #just t
 -- the whole spectrum somehow!
 --
 -- Albedo ≈ Color
-type material
-  = #metal { albedo: vec3, fuzz: f32 }
-  | #lambertian { albedo: vec3 }
-  | #dielectric { ref_ix: f32 }
-  | #emitter { emission: vec3 }
+type material =
+  { color: vec3
+  , fuzz: f32
+  , metalness: f32
+  , ref_ix: f32
+  , emission: vec3 }
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
@@ -115,11 +116,10 @@ let refract (wi: vec3) (n: vec3) (relative_ix: f32): maybe vec3 =
 -- outgoing vector towards the camera
 let scatter (wi: vec3) (h: hit) (rng: rnge)
           : { transmit: vec3, wo: vec3 } =
-  match h.mat
-  case #metal { fuzz, albedo } ->
+  if h.mat.metalness > 0 then -- is metal
     let reflected = reflect wi h.normal
     let scatter_sphere =
-      vec3.scale fuzz (random_in_unit_sphere rng)
+      vec3.scale h.mat.fuzz (random_in_unit_sphere rng)
     let wo = vec3.normalise (reflected vec3.+ scatter_sphere)
     -- If we hit a fuzzy metal sphere close to the edge, i.e. tangent
     -- / almost tangent it, the scatter sphere we "create" may
@@ -128,19 +128,19 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
     -- equivalence is, but as the RTi1W did, we simply return black in
     -- those cases, treating it as if the sphere absorbed the ray.
     let transmit =
-      if vec3.dot wo h.normal > 0 then albedo else mkvec3 0 0 0
+      if vec3.dot wo h.normal > 0 then h.mat.color else mkvec3 0 0 0
     in { transmit, wo }
-  case #lambertian { albedo } ->
+  else if h.mat.ref_ix <= 1 then -- is diffuse
     let target = h.pos
                  vec3.+ h.normal
                  vec3.+ random_in_unit_sphere rng
     let wo = vec3.normalise (target vec3.- h.pos)
-    in { transmit = albedo, wo }
-  case #dielectric { ref_ix } ->
+    in { transmit = h.mat.color, wo }
+  else -- is dielectric
     let (outward_normal, n1, n2) =
       if vec3.dot wi h.normal > 0
-      then (vec3.scale (-1) h.normal, ref_ix, 1.0)
-      else (h.normal, 1.0, ref_ix)
+      then (vec3.scale (-1) h.normal, h.mat.ref_ix, 1.0)
+      else (h.normal, 1.0, h.mat.ref_ix)
     let relative_ix = n1 / n2
     let (_, russian_roulette) = dist.rand (0,1) rng
     -- TODO: Do we really need a nothing case here? Seems like schlick
@@ -153,9 +153,6 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
         else reflect wi h.normal
       case #nothing -> reflect wi h.normal
     in { transmit = mkvec3 1 1 1, wo }
-  -- Unreachable. Should be handled in `color`
-  case #emitter _ ->
-    { transmit = error_vec, wo = error_vec }
 
 let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
 
@@ -222,22 +219,22 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
          (mkvec3 1 1 1, r, rng, 8u32)
     while bounces > 0 && vec3.norm throughput > 0.01
     do match hit_group bounds r world
-       case #just { mat = #emitter { emission }
-                  , normal = _, pos = _, t = _ } ->
-         (throughput vec3.* emission, r, rng, 0)
        case #just hit' ->
-         let { transmit, wo } = scatter r.dir hit' rng
-         let rng = advance_rng rng
-         let throughput = transmit vec3.* throughput
-         let eps = 0.001
-         let side = if vec3.dot wo hit'.normal >= 0 then 1 else (-1)
-         -- Fix surface acne
-         --
-         -- NOTE: Don't just walk along `wo`, because then we get
-         -- strange artifacts for some materials at extreme angles.
-         let acne_offset = vec3.scale (side * eps) hit'.normal
-         let r = mkray (hit'.pos vec3.+ acne_offset) wo
-         in (throughput, r, rng, bounces - 1)
+         if vec3.norm hit'.mat.emission > 0
+         then (throughput vec3.* hit'.mat.emission, r, rng, 0)
+         else
+           let { transmit, wo } = scatter r.dir hit' rng
+           let rng = advance_rng rng
+           let throughput = transmit vec3.* throughput
+           let eps = 0.001
+           let side = if vec3.dot wo hit'.normal >= 0 then 1 else (-1)
+           -- Fix surface acne
+           --
+           -- NOTE: Don't just walk along `wo`, because then we get
+           -- strange artifacts for some materials at extreme angles.
+           let acne_offset = vec3.scale (side * eps) hit'.normal
+           let r = mkray (hit'.pos vec3.+ acne_offset) wo
+           in (throughput, r, rng, bounces - 1)
        case #nothing ->
          (throughput vec3.* sky, r, rng, 0)
   in c
@@ -345,7 +342,11 @@ let vec3_from_array (xs: [3]f32): vec3 =
   { x = xs[0], y = xs[1], z = xs[2] }
 
 let parse_triangles (xs: []f32): []geom =
-  let mat = #lambertian { albedo = mkvec3 0.8 0.6 0.7 }
+  let mat = { color = mkvec3 0.8 0.6 0.7
+            , fuzz = 0
+            , metalness = 0
+            , ref_ix = 0
+            , emission = mkvec3 0 0 0 }
   let f ys = let ys' = (map vec3_from_array ys)
              in #triangle { a = ys'[0], b = ys'[1], c = ys'[2], mat }
   in map f (unflatten_3d (length xs / 9) 3 3 xs)
