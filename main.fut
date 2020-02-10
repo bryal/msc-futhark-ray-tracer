@@ -1,4 +1,4 @@
-import "lib/github.com/diku-dk/lys/lys"
+import "lys/lys"
 import "lib/github.com/athas/vector/vspace"
 import "lib/github.com/diku-dk/cpprandom/random"
 
@@ -36,8 +36,9 @@ type material
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
+type triangle = { a: vec3, b: vec3, c: vec3, mat: material }
 type sphere = { center: vec3, radius: f32, mat: material }
-type geom = #sphere sphere
+type geom = #sphere sphere | #triangle triangle
 type~ group = []geom
 
 type bounds = { tmin: f32, tmax: f32 }
@@ -74,7 +75,7 @@ let random_in_unit_disk (rng: rnge): vec3 =
   let (_, u) = dist.rand (0, 1) rng
   let r = f32.sqrt u
   in vec3.scale r (mkvec3 (f32.cos theta) (f32.sin theta) 0)
- 
+
 -- TODO: Glossy reflections. Check out wikipedia/Schlick's
 -- approximation. Use halfway vector? Rest of the microfacet model.
 let schlick (wi: vec3) (normal: vec3) (n1: f32) (n2: f32): f32 =
@@ -156,6 +157,29 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
   case #emitter _ ->
     { transmit = error_vec, wo = error_vec }
 
+let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
+
+let hit_triangle (bn: bounds) (ra: ray) (tr: triangle): maybe hit =
+  -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
+  let eps = 0.00001
+  let e1 = tr.b vec3.- tr.a
+  let e2 = tr.c vec3.- tr.a
+  let n = vec3.cross e1 e2
+  let a = -(vec3.dot n ra.dir)
+  in if a > -eps && a < eps then #nothing else
+  let s = ra.origin vec3.- tr.a
+  let m = vec3.cross s ra.dir
+  let { x = t, y = u, z = v } =
+    vec3.scale (1 / a)
+               (mkvec3 (vec3.dot n s)
+                       (vec3.dot m e2)
+                       (-(vec3.dot m e1)))
+  in if u < 0 || v < 0 || u + v > 1 || !(in_bounds bn t)
+     then #nothing
+     else let pos = point_at_param ra t
+          let normal = vec3.normalise n
+          in #just { t, pos, normal, mat = tr.mat }
+
 let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let oc = r.origin vec3.- s.center
   let a = 1 -- vec3.dot r.dir r.dir
@@ -164,20 +188,20 @@ let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
   let discriminant = b * b - 4 * a * c
   let root0 = (-b - f32.sqrt discriminant) / (2 * a)
   let root1 = (-b + f32.sqrt discriminant) / (2 * a)
-  let in_bounds t = t < bn.tmax && t > bn.tmin
   let handle_root t =
     let pos = point_at_param r t
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
     in #just { t, pos, normal, mat = s.mat }
   in if discriminant > 0
-     then if in_bounds root0 then handle_root root0
-          else if in_bounds root1 then handle_root root1
+     then if in_bounds bn root0 then handle_root root0
+          else if in_bounds bn root1 then handle_root root1
           else #nothing
      else #nothing
 
 let hit_geom (bn: bounds) (r: ray) (g: geom): maybe hit =
   match g
   case #sphere s -> hit_sphere bn r s
+  case #triangle t -> hit_triangle bn r t
 
 let hit_group (bn: bounds) (r: ray) (xs: group): maybe hit =
   let select_min_hit a b =
@@ -232,7 +256,6 @@ let cam_right (cam: camera): vec3 =
 let cam_up (cam: camera): vec3 =
   vec3.normalise (vec3.cross (cam_right cam) (cam_dir cam))
 
-
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
   let field_of_view = 80.0
@@ -257,69 +280,56 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale coord.y vertical
             vec3.- origin)
 
-let sample (w: i32, h: i32)
-           (j: i32, i: i32)
+let sample (w: u32, h: u32)
+           (j: u32, i: u32)
            (offset: vec2)
            (rng: rnge)
            (cam: camera)
+           (world: group)
          : vec3 =
-  let world =
-    [ #sphere { center = mkvec3 1.6 0 (-0.8)
-    	        , radius = 0.5
-    	        , mat = #lambertian { albedo = mkvec3 1 1 1 } }
-    , #sphere { center = mkvec3 0 2 (-1)
-    	        , radius = 0.3
-    	        , mat = #emitter { emission = mkvec3 10 10 10 } }
-    , #sphere { center = mkvec3 0 0 (-1.5)
-    	        , radius = 0.5
-    	        , mat = #metal { albedo = mkvec3 1 0.6 0, fuzz = 0.6 } }
-    , #sphere { center = mkvec3 0.4 0.2 (-0.6)
-    	        , radius = 0.5
-    	        , mat = #dielectric { ref_ix = 1.6 } }
-    , #sphere { center = mkvec3 0 (-400.4) (-1)
-    	        , radius = 400
-      	      , mat = #lambertian { albedo = mkvec3 0.2 0.8 0.3 }
-              } ]
-  let wh = mkvec2 (f32.i32 w) (f32.i32 h)
-  let ji = mkvec2 (f32.i32 j) (f32.i32 h - f32.i32 i - 1.0)
+  let wh = mkvec2 (f32.u32 w) (f32.u32 h)
+  let ji = mkvec2 (f32.u32 j) (f32.u32 h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
-  let ratio = f32.i32 w / f32.i32 h
+  let ratio = f32.u32 w / f32.u32 h
   let r = get_ray cam ratio xy rng
   in color r world rng
 
-let sample_all (n: i32)
-               (w: i32, h: i32)
+let sample_all (n: u32)
+               (w: u32, h: u32)
                (rng: rnge)
                (cam: camera)
+               (world: group)
              : (rnge, [][]vec3) =
-  let rngs = rnge.split_rng n rng
-  let rngss = map (rnge.split_rng (w * h)) rngs
+  let rngs = rnge.split_rng (i32.u32 n) rng
+  let rngss = map (rnge.split_rng (i32.u32 (w * h))) rngs
   let sample' i j rngs =
-    let ix = i * w + j
+    let ix = i * i32.u32 w + j
     let rng = rngs[ix]
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample (w, h) (j, i) offset rng cam)
-                (mkvec3_repeat (f32.i32 n))
-  let img = tabulate_2d h w <| \i j ->
+    in (vec3./) (sample (w, h) (u32.i32 j, u32.i32 i)
+                        offset rng cam world)
+                (mkvec3_repeat (f32.u32 n))
+  let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
               reduce_comm (vec3.+)
                           (mkvec3_repeat 0)
                           (map (sample' i j) rngss)
   in (advance_rng rng, img)
 
-let sample_accum (n_frames: i32)
-                 (dims: (i32, i32))
+let sample_accum (n_frames: u32)
+                 (dims: (u32, u32))
                  (rng: rnge)
                  (cam: camera)
                  (img_acc: [][]vec3)
-               : (rnge, [][]vec3) =                          
-  let (rng, img_new) = sample_all 1 dims rng cam
-  let nf = r32 n_frames
+                 (world: group)
+               : (rnge, [][]vec3) =
+  let (rng, img_new) = sample_all 1 dims rng cam world
+  let nf = f32.u32 n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
   in (rng, map2 (map2 merge) img_acc img_new)
-  
+
 let move_camera (cam: camera) (m: vec3): camera =
   let cam_forward = vec3.normalise (cam_dir cam with y = 0)
   in cam with origin = cam.origin
@@ -331,30 +341,42 @@ let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
   cam with pitch = clamp (-0.5*f32.pi) (0.5*f32.pi) (cam.pitch + pitch)
       with yaw = (cam.yaw + yaw) % (2*f32.pi)
 
-module lys: lys with text_content = (i32, i32, i32, f32, f32) = {
+let vec3_from_array (xs: [3]f32): vec3 =
+  { x = xs[0], y = xs[1], z = xs[2] }
+
+let parse_triangles (xs: []f32): []geom =
+  let mat = #lambertian { albedo = mkvec3 0.8 0.6 0.7 }
+  let f ys = let ys' = (map vec3_from_array ys)
+             in #triangle { a = ys'[0], b = ys'[1], c = ys'[2], mat }
+  in map f (unflatten_3d (length xs / 9) 3 3 xs)
+
+type text_content = (u32, u32, u32, f32, f32)
+module lys: lys with text_content = text_content = {
   type~ state = { time: f32
-                , dimensions: (i32, i32)
+                , dimensions: (u32, u32)
                 , rng: minstd_rand.rng
                 , img: [][]vec3
-                , samples: i32
-                , n_frames: i32
+                , samples: u32
+                , n_frames: u32
                 , mode: bool
-                , cam: camera }
+                , cam: camera
+                , world: group }
   let grab_mouse = false
 
-  let init (_seed: u32) (h: i32) (w: i32): state =
+  let init (_seed: u32) (h: u32) (w: u32) (data: []f32): state =
     { time = 0
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
-    , img = tabulate_2d h w (\_ _ -> mkvec3 0 0 0)
+    , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
     , samples = 1
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 0.1 0.5
-            , aperture = 0.5, focal_dist = 1.5 }}
+            , origin = mkvec3 0 0.7 1.7
+            , aperture = 0.5, focal_dist = 1.5 }
+    , world = parse_triangles data }
 
-  let resize (h: i32) (w: i32) (s: state) =
+  let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false
 
   let event (e: event) (s: state) =
@@ -363,9 +385,9 @@ module lys: lys with text_content = (i32, i32, i32, f32, f32) = {
         let time = s.time + dt
         let ((rng, img), n_frames) =
           if s.mode
-          then (sample_accum s.n_frames s.dimensions s.rng s.cam s.img
+          then (sample_accum s.n_frames s.dimensions s.rng s.cam s.img s.world
                ,s.n_frames + 1)
-          else (sample_all s.samples s.dimensions s.rng s.cam
+          else (sample_all s.samples s.dimensions s.rng s.cam s.world
                ,1)
         in s with img = img with rng = rng with time = time
              with n_frames = n_frames
@@ -408,7 +430,7 @@ module lys: lys with text_content = (i32, i32, i32, f32, f32) = {
           (s.cam with focal_dist = s.cam.focal_dist * 1.14)
         else if key == SDLK_l
         then s with cam =
-          (s.cam with focal_dist = f32.max 0.1 (s.cam.focal_dist / 1.14)) 
+          (s.cam with focal_dist = f32.max 0.1 (s.cam.focal_dist / 1.14))
         else s
       case _ -> s
 
@@ -417,11 +439,11 @@ module lys: lys with text_content = (i32, i32, i32, f32, f32) = {
   let text_format () =
     "FPS: %d\nSAMPLES: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f"
 
-  type text_content = (i32, i32, i32, f32, f32)
+  type text_content = text_content
 
   let text_content (render_duration: f32) (s: state): text_content =
-    (t32 render_duration, s.samples, s.n_frames, s.cam.aperture
-    , s.cam.focal_dist)
+    ( u32.f32 render_duration, s.samples, s.n_frames
+    , s.cam.aperture, s.cam.focal_dist )
 
   let text_colour = const argb.yellow
 }
