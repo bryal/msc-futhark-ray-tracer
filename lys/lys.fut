@@ -91,33 +91,6 @@ module type lys = {
   val text_colour : state -> argb.colour
 }
 
--- | A module type for the simple case where we don't want any text.
--- You can define the `lys` module to have this module type instead of
--- `lys`@mtype.  For maximal convenience, you can `open`
--- `lys_no_text`@module inside your module definition.
-module type lys_no_text = lys with text_content = ()
-
--- | A convenience module that can be `open`ed to give dummy
--- definitions for the text-related functionality.
-module lys_no_text = {
-  let text_format () = ""
-  type text_content = ()
-  let text_content _ _ = ()
-  let text_colour _ = argb.black
-}
-
--- | A dummy lys module that just produces a black rectangle and does
--- nothing in response to events.
-module lys: lys_no_text = {
-  type state = {h: u32, w: u32}
-  let init _ h w _ = {h,w}
-  let event _ s = s
-  let resize h w _ = {h,w}
-  let grab_mouse = false
-  let render {h,w} = replicate (i32.u32 w) argb.black |> replicate (i32.u32 h)
-  open lys_no_text
-}
-
 -- The following values are taken from
 -- https://wiki.libsdl.org/SDLKeycodeLookup
 
