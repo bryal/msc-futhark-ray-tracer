@@ -130,8 +130,9 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
       if vec3.dot wo h.normal > 0 then albedo else mkvec3 0 0 0
     in { transmit, wo }
   case #lambertian { albedo } ->
-    let target = h.pos vec3.+ h.normal
-                              vec3.+ random_in_unit_sphere rng
+    let target = h.pos
+                 vec3.+ h.normal
+                 vec3.+ random_in_unit_sphere rng
     let wo = vec3.normalise (target vec3.- h.pos)
     in { transmit = albedo, wo }
   case #dielectric { ref_ix } ->
