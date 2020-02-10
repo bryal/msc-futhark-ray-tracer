@@ -11,7 +11,8 @@
 
 newmtl leftWall
   Ns 10.0000
-  Ni 1.5000
+#  Ni 1.5000
+  Ni 1.0
   illum 2
   Ka 0.63 0.065 0.05 # Red
   Kd 0.63 0.065 0.05
@@ -21,14 +22,15 @@ newmtl leftWall
 
 newmtl rightWall
   Ns 10.0000
-  Ni 1.5000
+#  Ni 1.5000
+  Ni 1.0
   illum 2
   Ka 0.14 0.45 0.091 # Green
   Kd 0.14 0.45 0.091
   Ks 0 0 0
   Ke 0 0 0
 
-  
+
 newmtl floor
   Ns 10.0000
   Ni 1.0000
@@ -47,7 +49,7 @@ newmtl ceiling
   Kd 0.725 0.71 0.68
   Ks 0     0    0
   Ke 0     0    0
-  
+
 
 newmtl backWall
   Ns 10.0000
@@ -67,7 +69,7 @@ newmtl shortBox
   Kd 0.725 0.71 0.68
   Ks 0 0 0
   Ke 0 0 0
-  
+
 
 newmtl tallBox
   Ns 10.0000
@@ -85,4 +87,4 @@ newmtl light
   Ka 0.78 0.78 0.78 # White
   Kd 0.78 0.78 0.78
   Ks 0 0 0
-  Ke 17 12 4
+  Ke 27 22 14
