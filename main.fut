@@ -27,7 +27,7 @@ type maybe 't = #nothing | #just t
 -- TODO: Don't just supply albedo for red, green, and blue. Handle
 -- the whole spectrum somehow!
 --
--- Albedo ≈ Color
+-- TODO: Make hierarchical-like and more physically based
 type material =
   { color: vec3
   , fuzz: f32
@@ -37,7 +37,7 @@ type material =
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
-type triangle = { a: vec3, b: vec3, c: vec3, mat: material }
+type triangle = { a: vec3, b: vec3, c: vec3, mat_ix: u32 }
 type sphere = { center: vec3, radius: f32, mat: material }
 type geom = #sphere sphere | #triangle triangle
 type~ group = []geom
@@ -51,6 +51,17 @@ type camera =
   { pitch: f32, yaw: f32
   , origin: vec3
   , aperture: f32, focal_dist: f32 }
+
+type~ state = { time: f32
+              , dimensions: (u32, u32)
+              , rng: minstd_rand.rng
+              , img: [][]vec3
+              , samples: u32
+              , n_frames: u32
+              , mode: bool
+              , cam: camera
+              , mats: []material
+              , world: group }
 
 let clamp (min: f32) (max: f32) (x: f32): f32 =
   f32.max min (f32.min max x)
@@ -68,7 +79,7 @@ let random_in_unit_sphere (rng: rnge): vec3 =
   let r = u ** (1.0 / 3.0f32)
   let x = f32.sin theta * f32.cos phi
   let y = f32.sin theta * f32.sin phi
-  let z = f32.cos theta
+  let z = costheta
   in vec3.scale r (mkvec3 x y z)
 
 let random_in_unit_disk (rng: rnge): vec3 =
@@ -116,6 +127,7 @@ let refract (wi: vec3) (n: vec3) (relative_ix: f32): maybe vec3 =
 -- outgoing vector towards the camera
 let scatter (wi: vec3) (h: hit) (rng: rnge)
           : { transmit: vec3, wo: vec3 } =
+  -- TODO: Do a linearblend between metal and dielectric
   if h.mat.metalness > 0 then -- is metal
     let reflected = reflect wi h.normal
     let scatter_sphere =
@@ -130,6 +142,10 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
     let transmit =
       if vec3.dot wo h.normal > 0 then h.mat.color else mkvec3 0 0 0
     in { transmit, wo }
+  -- TODO: Make dielectric and diffuse mats hierarchical, so we
+  -- compute the reflectio n first, but if the refraction index is 1,
+  -- we will refract to the underlying diffuse material. Also handle
+  -- underlying transmitting material.
   else if h.mat.ref_ix <= 1 then -- is diffuse
     let target = h.pos
                  vec3.+ h.normal
@@ -156,7 +172,9 @@ let scatter (wi: vec3) (h: hit) (rng: rnge)
 
 let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
 
-let hit_triangle (bn: bounds) (ra: ray) (tr: triangle): maybe hit =
+let hit_triangle (bn: bounds) (ra: ray) (tr: triangle)
+                 (mats: []material)
+               : maybe hit =
   -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
   let eps = 0.00001
   let e1 = tr.b vec3.- tr.a
@@ -175,9 +193,10 @@ let hit_triangle (bn: bounds) (ra: ray) (tr: triangle): maybe hit =
      then #nothing
      else let pos = point_at_param ra t
           let normal = vec3.normalise n
-          in #just { t, pos, normal, mat = tr.mat }
+          in #just { t, pos, normal, mat = unsafe mats[i32.u32 tr.mat_ix] }
 
-let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
+let hit_sphere (bn: bounds) (r: ray) (s: sphere)
+             : maybe hit =
   let oc = r.origin vec3.- s.center
   let a = 1 -- vec3.dot r.dir r.dir
   let b = 2 * vec3.dot oc r.dir
@@ -195,33 +214,37 @@ let hit_sphere (bn: bounds) (r: ray) (s: sphere): maybe hit =
           else #nothing
      else #nothing
 
-let hit_geom (bn: bounds) (r: ray) (g: geom): maybe hit =
+let hit_geom (bn: bounds) (r: ray) (ms: []material) (g: geom)
+           : maybe hit =
   match g
   case #sphere s -> hit_sphere bn r s
-  case #triangle t -> hit_triangle bn r t
+  case #triangle t -> hit_triangle bn r t ms
 
-let hit_group (bn: bounds) (r: ray) (xs: group): maybe hit =
+let hit_group (bn: bounds) (r: ray) (xs: group) (mats: []material)
+            : maybe hit =
   let select_min_hit a b =
     match (a, b)
     case (#nothing, _) -> b
     case (_, #nothing) -> a
     case (#just a', #just b') -> if a'.t < b'.t then a else b
-  in reduce select_min_hit #nothing (map (hit_geom bn r) xs)
+  in reduce select_min_hit #nothing (map (hit_geom bn r mats) xs)
 
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
-let color (r: ray) (world: group) (rng: rnge): vec3 =
+let color (r: ray) (world: group) (mats: []material) (rng: rnge)
+        : vec3 =
   let bounds = { tmin = 0.0, tmax = f32.highest }
-  let sky = mkvec3 0.8 0.9 1.0
-  let (c, _, _, _) =
-    loop (throughput, r, rng, bounces) =
-         (mkvec3 1 1 1, r, rng, 8u32)
+  --let sky = mkvec3 0.8 0.9 1.0
+  let sky = mkvec3 0 0 0
+  let (throughput, light_source, _, _, _) =
+    loop (throughput, light_source, r, rng, bounces) =
+         (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 8u32)
     while bounces > 0 && vec3.norm throughput > 0.01
-    do match hit_group bounds r world
+    do match hit_group bounds r world mats
        case #just hit' ->
          if vec3.norm hit'.mat.emission > 0
-         then (throughput vec3.* hit'.mat.emission, r, rng, 0)
+         then (throughput, hit'.mat.emission, r, rng, 0)
          else
            let { transmit, wo } = scatter r.dir hit' rng
            let rng = advance_rng rng
@@ -234,10 +257,10 @@ let color (r: ray) (world: group) (rng: rnge): vec3 =
            -- strange artifacts for some materials at extreme angles.
            let acne_offset = vec3.scale (side * eps) hit'.normal
            let r = mkray (hit'.pos vec3.+ acne_offset) wo
-           in (throughput, r, rng, bounces - 1)
+           in (throughput, light_source, r, rng, bounces - 1)
        case #nothing ->
-         (throughput vec3.* sky, r, rng, 0)
-  in c
+         (throughput, sky, r, rng, 0)
+  in throughput vec3.* light_source
 
 let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
 
@@ -277,27 +300,22 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale coord.y vertical
             vec3.- origin)
 
-let sample (w: u32, h: u32)
+let sample (s: state)
            (j: u32, i: u32)
            (offset: vec2)
            (rng: rnge)
-           (cam: camera)
-           (world: group)
          : vec3 =
+  let (w, h) = s.dimensions
   let wh = mkvec2 (f32.u32 w) (f32.u32 h)
   let ji = mkvec2 (f32.u32 j) (f32.u32 h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let ratio = f32.u32 w / f32.u32 h
-  let r = get_ray cam ratio xy rng
-  in color r world rng
+  let r = get_ray s.cam ratio xy rng
+  in color r s.world s.mats rng
 
-let sample_all (n: u32)
-               (w: u32, h: u32)
-               (rng: rnge)
-               (cam: camera)
-               (world: group)
-             : (rnge, [][]vec3) =
-  let rngs = rnge.split_rng (i32.u32 n) rng
+let sample_all (s: state): (rnge, [][]vec3) =
+  let (w, h) = s.dimensions
+  let rngs = rnge.split_rng (i32.u32 s.samples) s.rng
   let rngss = map (rnge.split_rng (i32.u32 (w * h))) rngs
   let sample' i j rngs =
     let ix = i * i32.u32 w + j
@@ -305,27 +323,22 @@ let sample_all (n: u32)
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample (w, h) (u32.i32 j, u32.i32 i)
-                        offset rng cam world)
-                (mkvec3_repeat (f32.u32 n))
+    in (vec3./) (sample s
+                        (u32.i32 j, u32.i32 i)
+                        offset rng)
+                (mkvec3_repeat (f32.u32 s.samples))
   let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
               reduce_comm (vec3.+)
                           (mkvec3_repeat 0)
                           (map (sample' i j) rngss)
-  in (advance_rng rng, img)
+  in (advance_rng s.rng, img)
 
-let sample_accum (n_frames: u32)
-                 (dims: (u32, u32))
-                 (rng: rnge)
-                 (cam: camera)
-                 (img_acc: [][]vec3)
-                 (world: group)
-               : (rnge, [][]vec3) =
-  let (rng, img_new) = sample_all 1 dims rng cam world
-  let nf = f32.u32 n_frames
+let sample_accum (s: state): (rnge, [][]vec3) =
+  let (rng, img_new) = sample_all s
+  let nf = f32.u32 s.n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
-  in (rng, map2 (map2 merge) img_acc img_new)
+  in (rng, map2 (map2 merge) s.img img_new)
 
 let move_camera (cam: camera) (m: vec3): camera =
   let cam_forward = vec3.normalise (cam_dir cam with y = 0)
@@ -341,30 +354,39 @@ let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
 let vec3_from_array (xs: [3]f32): vec3 =
   { x = xs[0], y = xs[1], z = xs[2] }
 
-let parse_triangles (xs: []f32): []geom =
-  let mat = { color = mkvec3 0.8 0.6 0.7
-            , fuzz = 0
-            , metalness = 0
-            , ref_ix = 0
-            , emission = mkvec3 0 0 0 }
-  let f ys = let ys' = (map vec3_from_array ys)
-             in #triangle { a = ys'[0], b = ys'[1], c = ys'[2], mat }
-  in map f (unflatten_3d (length xs / 9) 3 3 xs)
+let parse_triangles [t]
+                    (tris: [t][3][3]f32) (tri_mats: [t]u32)
+                  : [t]geom =
+  let f tri (mat_ix: u32) =
+    let tri' = (map vec3_from_array tri)
+    in #triangle { a = tri'[0]
+                 , b = tri'[1]
+                 , c = tri'[2]
+                 , mat_ix }
+  in map2 f tris tri_mats
+
+let parse_mat (m: [9]f32): material =
+  { color = mkvec3 m[0] m[1] m[2]
+  , fuzz = m[3]
+  , metalness = m[4]
+  , ref_ix = m[5]
+  , emission = mkvec3 m[6] m[7] m[8] }
+
+let parse_mats (mats: [][9]f32): []material =
+  map parse_mat mats
 
 type text_content = (u32, u32, u32, f32, f32)
 module lys: lys with text_content = text_content = {
-  type~ state = { time: f32
-                , dimensions: (u32, u32)
-                , rng: minstd_rand.rng
-                , img: [][]vec3
-                , samples: u32
-                , n_frames: u32
-                , mode: bool
-                , cam: camera
-                , world: group }
+  type~ state = state
+
   let grab_mouse = false
 
-  let init (_seed: u32) (h: u32) (w: u32) (data: []f32): state =
+  let init (_seed: u32)
+           (h: u32) (w: u32)
+           (tri_geoms: [][3][3]f32)
+           (tri_mats: []u32)
+           (mat_data: [][9]f32)
+         : state =
     { time = 0
     , dimensions = (w, h)
     , rng = minstd_rand.rng_from_seed [123]
@@ -375,7 +397,8 @@ module lys: lys with text_content = text_content = {
     , cam = { pitch = 0.0, yaw = 0.0
             , origin = mkvec3 0 0.7 1.7
             , aperture = 0.5, focal_dist = 1.5 }
-    , world = parse_triangles data }
+    , mats = parse_mats mat_data
+    , world = parse_triangles tri_geoms tri_mats }
 
   let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false
@@ -386,10 +409,8 @@ module lys: lys with text_content = text_content = {
         let time = s.time + dt
         let ((rng, img), n_frames) =
           if s.mode
-          then (sample_accum s.n_frames s.dimensions s.rng s.cam s.img s.world
-               ,s.n_frames + 1)
-          else (sample_all s.samples s.dimensions s.rng s.cam s.world
-               ,1)
+          then (sample_accum s, s.n_frames + 1)
+          else (sample_all s, 1)
         in s with img = img with rng = rng with time = time
              with n_frames = n_frames
       case #keydown {key} ->

@@ -259,11 +259,20 @@ void sdl_loop(struct lys_context *ctx) {
     }
 }
 
-void do_sdl(struct lys_context *ctx, bool allow_resize, struct futhark_f32_1d* triangle_data) {
+void do_sdl(
+    struct lys_context *ctx,
+    bool allow_resize,
+    struct futhark_f32_3d* triangle_data,
+    struct futhark_u32_1d* triangle_mats,
+    struct futhark_f32_2d* mat_data)
+{
     struct futhark_context *fut = ctx->fut;
 
     ctx->last_time = get_wall_time();
-    futhark_entry_init(fut, &ctx->state, (uint32_t)get_wall_time(), ctx->height, ctx->width, triangle_data);
+    futhark_entry_init(
+        fut, &ctx->state, (uint32_t)get_wall_time(),
+        ctx->height, ctx->width,
+        triangle_data, triangle_mats, mat_data);
 
     int flags = 0;
     if (allow_resize) {
@@ -528,18 +537,28 @@ int main(int argc, char** argv) {
     ctx.fut = futctx;
 
 
-    size_t num;
+    size_t num_tris, num_mat_components;
     float* triangle_data;
-    load_obj_data(obj_path, &num, &triangle_data);
-    struct futhark_f32_1d* fut_triangle_data =
-        futhark_new_f32_1d(ctx.fut, triangle_data, (int64_t)num);
+    uint32_t* triangle_mats;
+    float* mat_data;
+    load_obj_data(
+        obj_path,
+        &num_tris, &num_mat_components,
+        &triangle_data, &triangle_mats, &mat_data);
 
-    do_sdl(&ctx, allow_resize, fut_triangle_data);
+    struct futhark_f32_3d* fut_triangle_data =
+        futhark_new_f32_3d(ctx.fut, triangle_data, (int64_t)num_tris, 3, 3);
+    struct futhark_u32_1d* fut_triangle_mats =
+        futhark_new_u32_1d(ctx.fut, triangle_mats, (int64_t)num_tris);
+    struct futhark_f32_2d* fut_mat_data =
+        futhark_new_f32_2d(ctx.fut, mat_data, (int64_t)num_mat_components / 9, 9);
+
+    do_sdl(&ctx, allow_resize, fut_triangle_data, fut_triangle_mats, fut_mat_data);
 
     free(font_path);
 
     futhark_context_free(futctx);
     futhark_context_config_free(futcfg);
-    free_obj_data(triangle_data);
+    free_obj_data(triangle_data, triangle_mats, mat_data);
     return 0;
 }

@@ -8,7 +8,12 @@ module m = import "lys"
 
 type^ state = m.lys.state
 
-entry init (seed: u32) (h: u32) (w: u32) (data: []f32): state = m.lys.init seed h w data
+entry init (seed: u32)
+           (h: u32) (w: u32)
+           (tri_geoms: [][3][3]f32)
+           (tri_mats: []u32)
+           (mat_data: [][9]f32)
+         : state = m.lys.init seed h w tri_geoms tri_mats mat_data
 
 entry resize (h: u32) (w: u32) (s: state): state = m.lys.resize h w s
 
