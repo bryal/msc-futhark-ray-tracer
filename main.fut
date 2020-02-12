@@ -1,56 +1,11 @@
 import "lys/lys"
-import "lib/github.com/athas/vector/vspace"
-import "lib/github.com/diku-dk/cpprandom/random"
 
-module vec3 = mk_vspace_3d f32
-type vec3 = vec3.vector
-
-module vec2 = mk_vspace_2d f32
-type vec2 = vec2.vector
-
-let mkvec2 x y: vec2 = { x, y }
-let mkvec3 x y z: vec3 = { x, y, z }
-
-let mkvec3_repeat x: vec3 = { x = x, y = x, z = x }
-
-type ray = { origin: vec3, dir: vec3 }
+import "material"
+import "shapes"
+import "camera"
 
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
-let point_at_param (r: ray) (t: f32): vec3 =
-  r.origin vec3.+ vec3.scale t r.dir
-
-module dist = uniform_real_distribution f32 minstd_rand
-
-type maybe 't = #nothing | #just t
-
--- TODO: Don't just supply albedo for red, green, and blue. Handle
--- the whole spectrum somehow!
---
--- TODO: Make hierarchical-like and more physically based
-type material =
-  { color: vec3
-  , fuzz: f32
-  , metalness: f32
-  , ref_ix: f32
-  , emission: vec3 }
-
-type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
-
-type triangle = { a: vec3, b: vec3, c: vec3, mat_ix: u32 }
-type sphere = { center: vec3, radius: f32, mat: material }
-type geom = #sphere sphere | #triangle triangle
-type~ group = []geom
-
-type bounds = { tmin: f32, tmax: f32 }
-
-module rnge = minstd_rand
-type rnge = rnge.rng
-
-type camera =
-  { pitch: f32, yaw: f32
-  , origin: vec3
-  , aperture: f32, focal_dist: f32 }
 
 type~ state = { time: f32
               , dimensions: (u32, u32)
@@ -63,162 +18,8 @@ type~ state = { time: f32
               , mats: []material
               , world: group }
 
-let clamp (min: f32) (max: f32) (x: f32): f32 =
-  f32.max min (f32.min max x)
-
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
-
-let error_vec: vec3 = mkvec3 1000 0 1000
-
-let random_in_unit_sphere (rng: rnge): vec3 =
-  let (rng, phi) = dist.rand (0, 2 * f32.pi) rng
-  let (rng, costheta) = dist.rand (-1, 1) rng
-  let (_, u) = dist.rand (0, 1) rng
-  let theta = f32.acos costheta
-  let r = u ** (1.0 / 3.0f32)
-  let x = f32.sin theta * f32.cos phi
-  let y = f32.sin theta * f32.sin phi
-  let z = costheta
-  in vec3.scale r (mkvec3 x y z)
-
-let random_in_unit_disk (rng: rnge): vec3 =
-  let (rng, theta) = dist.rand (0, 2 * f32.pi) rng
-  let (_, u) = dist.rand (0, 1) rng
-  let r = f32.sqrt u
-  in vec3.scale r (mkvec3 (f32.cos theta) (f32.sin theta) 0)
-
--- TODO: Glossy reflections. Check out wikipedia/Schlick's
--- approximation. Use halfway vector? Rest of the microfacet model.
-let schlick (wi: vec3) (normal: vec3) (n1: f32) (n2: f32): f32 =
-  let r0 = let x = (n1 - n2) / (n1 + n2) in x * x
-  in r0 + (1 - r0) * (1 + vec3.dot normal wi)**5
-
-let reflect (wi: vec3) (n: vec3): vec3 =
-  wi vec3.- vec3.scale (2 * vec3.dot wi n) n
-
--- Returns #nothing on total internal reflection
---
--- We use the (apparently, we have not benchmarked it) efficient
--- method of Bec presented in Real Time Rendering formula 14.28
--- (p. 627) to compute the refraction vector. This is an
--- implementation of Snell's Law, not an approximation.
---
--- About `discriminant`: "Total internal reflection is indicated by a
--- negative radiccand in the equation for cos(θ₂)" according to
--- wikipedia/Snell's Law. k = cos(θ₂) in our function.
-let refract (wi: vec3) (n: vec3) (relative_ix: f32): maybe vec3 =
-  let l = vec3.scale (-1) wi
-  let w = relative_ix * vec3.dot l n
-  let discriminant = 1 + (w - relative_ix) * (w + relative_ix)
-  in if discriminant < 0
-     then #nothing
-     else let k = f32.sqrt discriminant
-          let t = vec3.scale (w - k) n vec3.- vec3.scale relative_ix l
-          in #just t
-
--- Transmittance: The amount of light not absorbed by the hit object
---
--- NOTE: What we call transmittance here is called attenuation in
--- RTi1W, but that seemed inversed to us.
---
--- NOTE: In some literature, wi and wo are reversed, so wi is the
--- direction for the incoming light from the sun, and wo is the
--- outgoing vector towards the camera
-let scatter (wi: vec3) (h: hit) (rng: rnge)
-          : { transmit: vec3, wo: vec3 } =
-  -- TODO: Do a linearblend between metal and dielectric
-  if h.mat.metalness > 0 then -- is metal
-    let reflected = reflect wi h.normal
-    let scatter_sphere =
-      vec3.scale h.mat.fuzz (random_in_unit_sphere rng)
-    let wo = vec3.normalise (reflected vec3.+ scatter_sphere)
-    -- If we hit a fuzzy metal sphere close to the edge, i.e. tangent
-    -- / almost tangent it, the scatter sphere we "create" may
-    -- intersect the metal sphere, and we may sample a wo that is
-    -- actually pointing inwards. We're not sure what the real-life
-    -- equivalence is, but as the RTi1W did, we simply return black in
-    -- those cases, treating it as if the sphere absorbed the ray.
-    let transmit =
-      if vec3.dot wo h.normal > 0 then h.mat.color else mkvec3 0 0 0
-    in { transmit, wo }
-  -- TODO: Make dielectric and diffuse mats hierarchical, so we
-  -- compute the reflectio n first, but if the refraction index is 1,
-  -- we will refract to the underlying diffuse material. Also handle
-  -- underlying transmitting material.
-  else if h.mat.ref_ix <= 1 then -- is diffuse
-    let target = h.pos
-                 vec3.+ h.normal
-                 vec3.+ random_in_unit_sphere rng
-    let wo = vec3.normalise (target vec3.- h.pos)
-    in { transmit = h.mat.color, wo }
-  else -- is dielectric
-    let (outward_normal, n1, n2) =
-      if vec3.dot wi h.normal > 0
-      then (vec3.scale (-1) h.normal, h.mat.ref_ix, 1.0)
-      else (h.normal, 1.0, h.mat.ref_ix)
-    let relative_ix = n1 / n2
-    let (_, russian_roulette) = dist.rand (0,1) rng
-    -- TODO: Do we really need a nothing case here? Seems like schlick
-    -- could immediately tell us if there's total internal reflection.
-    let wo =
-      match refract wi outward_normal relative_ix
-      case #just refracted ->
-        if russian_roulette >= schlick wi outward_normal n1 n2
-        then refracted
-        else reflect wi h.normal
-      case #nothing -> reflect wi h.normal
-    in { transmit = mkvec3 1 1 1, wo }
-
-let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
-
-let hit_triangle (bn: bounds) (ra: ray) (tr: triangle)
-                 (mats: []material)
-               : maybe hit =
-  -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
-  let eps = 0.00001
-  let e1 = tr.b vec3.- tr.a
-  let e2 = tr.c vec3.- tr.a
-  let n = vec3.cross e1 e2
-  let a = -(vec3.dot n ra.dir)
-  in if a > -eps && a < eps then #nothing else
-  let s = ra.origin vec3.- tr.a
-  let m = vec3.cross s ra.dir
-  let { x = t, y = u, z = v } =
-    vec3.scale (1 / a)
-               (mkvec3 (vec3.dot n s)
-                       (vec3.dot m e2)
-                       (-(vec3.dot m e1)))
-  in if u < 0 || v < 0 || u + v > 1 || !(in_bounds bn t)
-     then #nothing
-     else let pos = point_at_param ra t
-          let normal = vec3.normalise n
-          in #just { t, pos, normal, mat = unsafe mats[i32.u32 tr.mat_ix] }
-
-let hit_sphere (bn: bounds) (r: ray) (s: sphere)
-             : maybe hit =
-  let oc = r.origin vec3.- s.center
-  let a = 1 -- vec3.dot r.dir r.dir
-  let b = 2 * vec3.dot oc r.dir
-  let c = vec3.dot oc oc - s.radius * s.radius
-  let discriminant = b * b - 4 * a * c
-  let root0 = (-b - f32.sqrt discriminant) / (2 * a)
-  let root1 = (-b + f32.sqrt discriminant) / (2 * a)
-  let handle_root t =
-    let pos = point_at_param r t
-    let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
-    in #just { t, pos, normal, mat = s.mat }
-  in if discriminant > 0
-     then if in_bounds bn root0 then handle_root root0
-          else if in_bounds bn root1 then handle_root root1
-          else #nothing
-     else #nothing
-
-let hit_geom (bn: bounds) (r: ray) (ms: []material) (g: geom)
-           : maybe hit =
-  match g
-  case #sphere s -> hit_sphere bn r s
-  case #triangle t -> hit_triangle bn r t ms
 
 let hit_group (bn: bounds) (r: ray) (xs: group) (mats: []material)
             : maybe hit =
@@ -237,6 +38,9 @@ let color (r: ray) (world: group) (mats: []material) (rng: rnge)
   let bounds = { tmin = 0.0, tmax = f32.highest }
   --let sky = mkvec3 0.8 0.9 1.0
   let sky = mkvec3 0 0 0
+  -- TODO: Use russian roulette termination. See PBR Book 13.7.
+  --       Current method is not quite physically correct, just
+  --       unlikely to produce a bad result.
   let (throughput, light_source, _, _, _) =
     loop (throughput, light_source, r, rng, bounces) =
          (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 8u32)
@@ -261,20 +65,6 @@ let color (r: ray) (world: group) (mats: []material) (rng: rnge)
        case #nothing ->
          (throughput, sky, r, rng, 0)
   in throughput vec3.* light_source
-
-let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
-
-let world_up: vec3 = mkvec3 0 1 0
-
-let cam_dir (cam: camera): vec3 =
-  vec3.normalise
-    (mkvec3 (f32.sin cam.yaw) (f32.sin cam.pitch) (-(f32.cos cam.yaw)))
-
-let cam_right (cam: camera): vec3 =
-  vec3.normalise (vec3.cross (cam_dir cam) world_up)
-
-let cam_up (cam: camera): vec3 =
-  vec3.normalise (vec3.cross (cam_right cam) (cam_dir cam))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
@@ -339,20 +129,6 @@ let sample_accum (s: state): (rnge, [][]vec3) =
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
   in (rng, map2 (map2 merge) s.img img_new)
-
-let move_camera (cam: camera) (m: vec3): camera =
-  let cam_forward = vec3.normalise (cam_dir cam with y = 0)
-  in cam with origin = cam.origin
-                       vec3.+ vec3.scale (0.1*m.z) cam_forward
-                       vec3.+ vec3.scale (0.1*m.x) (cam_right cam)
-                       vec3.+ vec3.scale (0.1*m.y) world_up
-
-let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
-  cam with pitch = clamp (-0.5*f32.pi) (0.5*f32.pi) (cam.pitch + pitch)
-      with yaw = (cam.yaw + yaw) % (2*f32.pi)
-
-let vec3_from_array (xs: [3]f32): vec3 =
-  { x = xs[0], y = xs[1], z = xs[2] }
 
 let parse_triangles [t]
                     (tris: [t][3][3]f32) (tri_mats: [t]u32)
