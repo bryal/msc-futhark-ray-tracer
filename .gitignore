@@ -1,0 +1,9 @@
+*~
+#*#
+*.o
+*.a
+/lib/
+/main
+/main_wrapper.c
+/main_wrapper.h
+/main_printf.h
