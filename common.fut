@@ -50,22 +50,11 @@ let clamp (min: f32) (max: f32) (x: f32): f32 =
 
 let error_vec: vec3 = mkvec3 1000 0 1000
 
-let random_in_unit_disk (rng: rnge): vec3 =
+let random_in_unit_disk (rng: rnge): (rnge, vec3) =
   let (rng, theta) = dist.rand (0, 2 * f32.pi) rng
-  let (_, u) = dist.rand (0, 1) rng
+  let (rng, u) = dist.rand (0, 1) rng
   let r = f32.sqrt u
-  in vec3.scale r (mkvec3 (f32.cos theta) (f32.sin theta) 0)
-
-let random_in_unit_sphere (rng: rnge): vec3 =
-  let (rng, phi) = dist.rand (0, 2 * f32.pi) rng
-  let (rng, costheta) = dist.rand (-1, 1) rng
-  let (_, u) = dist.rand (0, 1) rng
-  let theta = f32.acos costheta
-  let r = u ** (1.0 / 3.0f32)
-  let x = f32.sin theta * f32.cos phi
-  let y = f32.sin theta * f32.sin phi
-  let z = costheta
-  in vec3.scale r (mkvec3 x y z)
+  in (rng, vec3.scale r (mkvec3 (f32.cos theta) (f32.sin theta) 0))
 
 let world_up: vec3 = mkvec3 0 1 0
 
@@ -73,3 +62,5 @@ let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
 
 let point_at_param (r: ray) (t: f32): vec3 =
   r.origin vec3.+ vec3.scale t r.dir
+
+let inv_pi: f32 = 1.0 / f32.pi

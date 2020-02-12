@@ -50,17 +50,20 @@ let color (r: ray) (world: group) (mats: []material) (rng: rnge)
          if vec3.norm hit'.mat.emission > 0
          then (throughput, hit'.mat.emission, r, rng, 0)
          else
-           let { transmit, wo } = scatter r.dir hit' rng
+           let wo = vec3.scale (-1) r.dir
+           let { wi, bsdf, pdf } = uber_sample_dir wo hit' rng
            let rng = advance_rng rng
-           let throughput = transmit vec3.* throughput
+           let cosFalloff = vec3.dot hit'.normal wi
+           let throughput =
+             throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
            let eps = 0.001
-           let side = if vec3.dot wo hit'.normal >= 0 then 1 else (-1)
+           let side = if vec3.dot wi hit'.normal >= 0 then 1 else (-1)
            -- Fix surface acne
            --
-           -- NOTE: Don't just walk along `wo`, because then we get
+           -- NOTE: Don't just walk along `wi`, because then we get
            -- strange artifacts for some materials at extreme angles.
            let acne_offset = vec3.scale (side * eps) hit'.normal
-           let r = mkray (hit'.pos vec3.+ acne_offset) wo
+           let r = mkray (hit'.pos vec3.+ acne_offset) wi
            in (throughput, light_source, r, rng, bounces - 1)
        case #nothing ->
          (throughput, sky, r, rng, 0)
@@ -81,7 +84,8 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
     vec3.- vec3.scale focus_dist w
   let horizontal = vec3.scale (2 * half_width * focus_dist) u
   let vertical = vec3.scale (2 * half_height * focus_dist) v
-  let lens = vec3.scale lens_radius (random_in_unit_disk rng)
+  let (_, d) = random_in_unit_disk rng
+  let lens = vec3.scale lens_radius d
   let lens_offset = vec3.scale lens.x u vec3.+ vec3.scale lens.y v
   let origin = cam.origin vec3.+ lens_offset
   in mkray origin
@@ -171,8 +175,8 @@ module lys: lys with text_content = text_content = {
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 0.7 1.7
-            , aperture = 0.5, focal_dist = 1.5 }
+            , origin = mkvec3 0 0.8 1.8
+            , aperture = 0.0, focal_dist = 1.5 }
     , mats = parse_mats mat_data
     , world = parse_triangles tri_geoms tri_mats }
 
