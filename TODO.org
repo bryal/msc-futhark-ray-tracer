@@ -32,3 +32,5 @@
 * INACTIVE Rewrite host-code in Rust :optional:
 
 * INACTIVE Futhark lexer for LaTeX syntax highlighting :optional:
+* INACTIVE Investigate problems related to float errors
+  E.g. "catastrophic cancellation". See PBR Book 3.9.
