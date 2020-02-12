@@ -1,0 +1,34 @@
+* DONE Ray tracing in One Weekend
+  Completed <2020-02-06>.  We did the things. Done in time. Went
+  pretty well. Some details on comments and the git commit messages.
+
+* TODO Prepare kickoff presentation
+  Slides are mostly finished, very basic. Still need to add a video,
+  maybe send the slides to Siddhant, & prepare scrip / practice the
+  presentation.
+* Implement .mtl loading
+** TODO Simplified, partial loading. Not all properties respected
+
+** NEXT Adjust for more physically based materials
+   http://exocortex.com/blog/extending_wavefront_mtl_to_support_pbr
+   https://disney-animation.s3.amazonaws.com/library/s2012_pbs_disney_brdf_notes_v2.pdf
+
+* TODO Implement BVH
+
+* TODO Document how we follow & deviate from tutorials
+
+* TODO More physically based model
+** BRDF, PDF, & Importance sampling
+   I.e. physically accurate sampling distributions.
+
+* NEXT LIDAR
+
+* NEXT Generalize
+
+* INACTIVE Volumes (mist etc) :optional:
+
+* INACTIVE Particles/billboards (snow etc) :optional:
+
+* INACTIVE Rewrite host-code in Rust :optional:
+
+* INACTIVE Futhark lexer for LaTeX syntax highlighting :optional:
