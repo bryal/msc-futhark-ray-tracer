@@ -9,6 +9,7 @@ let mkray (o: vec3) (d: vec3): ray =
 
 type~ state = { time: f32
               , dimensions: (u32, u32)
+              , subsampling: u32
               , rng: minstd_rand.rng
               , img: [][]vec3
               , samples: u32
@@ -95,20 +96,22 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.- origin)
 
 let sample (s: state)
+           (w: f32, h: f32)
            (j: u32, i: u32)
            (offset: vec2)
            (rng: rnge)
          : vec3 =
-  let (w, h) = s.dimensions
-  let wh = mkvec2 (f32.u32 w) (f32.u32 h)
-  let ji = mkvec2 (f32.u32 j) (f32.u32 h - f32.u32 i - 1.0)
+  let wh = mkvec2 w h
+  let ratio = w / h
+  let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
-  let ratio = f32.u32 w / f32.u32 h
   let r = get_ray s.cam ratio xy rng
   in color r s.world s.mats rng
 
 let sample_all (s: state): (rnge, [][]vec3) =
   let (w, h) = s.dimensions
+  let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
+               , (h + s.subsampling - 1) / s.subsampling)
   let rngs = rnge.split_rng (i32.u32 s.samples) s.rng
   let rngss = map (rnge.split_rng (i32.u32 (w * h))) rngs
   let sample' i j rngs =
@@ -118,6 +121,7 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
     in (vec3./) (sample s
+                        (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
                         offset rng)
                 (mkvec3_repeat (f32.u32 s.samples))
@@ -155,6 +159,14 @@ let parse_mat (m: [9]f32): material =
 let parse_mats (mats: [][9]f32): []material =
   map parse_mat mats
 
+let upscale (full_w: i32, full_h: i32)
+            (subsampling: i32)
+            (sub_img: [][]vec3)
+          : [][]vec3 =
+  tabulate_2d full_h full_w
+              (\i j -> unsafe sub_img[ i / subsampling
+                                     , j / subsampling ])
+
 type text_content = (u32, u32, u32, f32, f32)
 module lys: lys with text_content = text_content = {
   type~ state = state
@@ -169,6 +181,7 @@ module lys: lys with text_content = text_content = {
          : state =
     { time = 0
     , dimensions = (w, h)
+    , subsampling = 2
     , rng = minstd_rand.rng_from_seed [123]
     , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
     , samples = 1
@@ -199,6 +212,12 @@ module lys: lys with text_content = text_content = {
         else if key == SDLK_q
         then s with samples =
           if s.samples < 2 then 1 else s.samples / 2
+        else if key == SDLK_2
+        then s with subsampling = s.subsampling + 1
+               with mode = false
+        else if key == SDLK_1
+        then s with subsampling = u32.max 1 (s.subsampling - 1)
+               with mode = false
         else if key == SDLK_w
         then s with cam = move_camera s.cam (mkvec3 0 0 1)
         else if key == SDLK_a
@@ -236,7 +255,11 @@ module lys: lys with text_content = text_content = {
         else s
       case _ -> s
 
-  let render (s: state) = map (map vcol_to_argb) s.img
+  let render (s: state) =
+    let dims = let (w, h) = s.dimensions in (i32.u32 w, i32.u32 h)
+    let sub = i32.u32 s.subsampling
+    in map (map vcol_to_argb)
+           (upscale dims sub s.img)
 
   let text_format () =
     "FPS: %d\nSAMPLES: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f"
