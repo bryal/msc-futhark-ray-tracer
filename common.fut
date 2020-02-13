@@ -50,9 +50,12 @@ let clamp (min: f32) (max: f32) (x: f32): f32 =
 
 let error_vec: vec3 = mkvec3 1000 0 1000
 
+-- Random sample a point in the unit disk.
+--
+-- Range is exclusive, i.e. radius < 1 => |v| < 1.
 let random_in_unit_disk (rng: rnge): (rnge, vec3) =
   let (rng, theta) = dist.rand (0, 2 * f32.pi) rng
-  let (rng, u) = dist.rand (0, 1) rng
+  let (rng, u) = dist.rand (0, 0.99) rng
   let r = f32.sqrt u
   in (rng, vec3.scale r (mkvec3 (f32.cos theta) (f32.sin theta) 0))
 

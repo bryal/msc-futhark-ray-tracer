@@ -15,6 +15,10 @@ type dir_sample = { wi: vec3, bsdf: vec3, pdf: f32 }
 -- Θ is the angle between the up-axis and the sampled direction. sin Θ
 -- is the radius, and cos Θ is thus the height of the projected
 -- sample.
+--
+-- Range of Θ is exclusive, i.e. angle between z and plane is <
+-- 90deg. No point in sampling directions that will have a PDF-value
+-- of zero!
 let cosine_sample_hemisphere (rng: rnge): (rnge, vec3) =
   let (rng, d) = random_in_unit_disk rng
   let sin2theta = d.x * d.x + d.y * d.y
