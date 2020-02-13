@@ -65,12 +65,7 @@ let color (r: ray) (world: group) (mats: []material) (rng: rnge)
            -- strange artifacts for some materials at extreme angles.
            let acne_offset = vec3.scale (side * eps) hit'.normal
            let r = mkray (hit'.pos vec3.+ acne_offset) wi
-           -- If the PDF is way small, we get issues with float NaN
-           -- and Inf. Happens sometimes, although rarely.
-           let invalid_pdf = pdf < 0.001
-           in if invalid_pdf
-              then (mkvec3 0 0 0, light_source, r, rng, 0)
-              else (throughput, light_source, r, rng, bounces - 1)
+           in (throughput, light_source, r, rng, bounces - 1)
        case #nothing ->
          (throughput, sky, r, rng, 0)
   in throughput vec3.* light_source

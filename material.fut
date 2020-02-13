@@ -27,17 +27,17 @@ let cosine_sample_hemisphere (rng: rnge): (rnge, vec3) =
   let z = f32.sqrt cos2theta
   in (rng, mkvec3 d.x d.y z)
 
--- Construct an orthonormal base for (wo, n) and transform wi from xyz
--- to it.
---
--- Normal is up, wo is "backwards" (at an angle).
-let orthonormal_basis_transform (wo: vec3, n: vec3) (wi_xyz: vec3)
-                              : vec3 =
-  let right = vec3.normalise (vec3.cross n wo)
-  let forwards = vec3.cross n right
-  in vec3.scale wi_xyz.x right
-     vec3.+ vec3.scale wi_xyz.y forwards
-     vec3.+ vec3.scale wi_xyz.z n
+-- Construct an arbitrary orthonormal base for a normal, transform a
+-- vector into it
+let orthonormal_basis_inverse_transform (normal: vec3) (w: vec3)
+                                      : vec3 =
+  let binormal = if f32.abs normal.x > f32.abs normal.z
+                 then vec3.normalise (mkvec3 (-normal.y) normal.x 0)
+                 else vec3.normalise (mkvec3 0 (-normal.z) normal.y)
+  let tangent = vec3.cross binormal normal
+  in vec3.scale w.x tangent
+     vec3.+ vec3.scale w.y binormal
+     vec3.+ vec3.scale w.z normal
 
 let diffuse_bsdf (color: vec3): vec3 =
   vec3.scale inv_pi color
@@ -45,10 +45,10 @@ let diffuse_bsdf (color: vec3): vec3 =
 -- TODO: Consider Oren-Nayar model instead of Lambertian
 --
 -- Diffuse reflection according to Lambertian model
-let diffuse_sample_dir (wo: vec3) (h: hit) (rng: rnge): dir_sample =
+let diffuse_sample_dir (h: hit) (rng: rnge): dir_sample =
   let (_, dir) = cosine_sample_hemisphere rng
   let cosTheta = dir.z
-  let wi = orthonormal_basis_transform (wo, h.normal) dir
+  let wi = orthonormal_basis_inverse_transform h.normal dir
   -- TODO: Can / when do we get wi in the wrong hemisphere? Float
   --       error? Consider returning pdf and/or bsdf = 0 when that is
   --       the case.
@@ -63,7 +63,7 @@ let dielectric_refraction_sample_dir (wo: vec3) (h: hit) (rng: rnge)
   -- TODO: Transmission or diffuse reflection
   if false -- some opacity parameter of the material?
   then refraction_sample_dir wo h rng
-  else diffuse_sample_dir wo h rng
+  else diffuse_sample_dir h rng
 
 
 let dielectric_reflection_sample_dir (_wo: vec3) (_h: hit) (_rng: rnge)
