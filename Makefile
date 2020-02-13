@@ -1,4 +1,5 @@
 LYS_BACKEND?=opencl
+CC=clang
 
 PROG_FUT_DEPS:=$(shell ls *.fut; find lib -name \*.fut)
 
@@ -27,7 +28,7 @@ main:
 	@make # The sync might have resulted in a new Makefile.
 else
 main: main_wrapper.o main_wrapper.h main_printf.h lys/liblys.c lys/liblys.h librust_stuff.a
-	gcc lys/liblys.c main_wrapper.o librust_stuff.a -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
+	$(CC) lys/liblys.c main_wrapper.o librust_stuff.a -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
 endif
 
 librust_stuff.a: $(shell find rust-stuff/src -name \*.rs)
@@ -39,7 +40,7 @@ main_printf.h: main_wrapper.c
 
 # We do not want warnings and such for the generated code.
 main_wrapper.o: main_wrapper.c
-	gcc -o $@ -c $< $(NOWARN_CFLAGS)
+	$(CC) -o $@ -c $< $(NOWARN_CFLAGS)
 
 %.c: %.fut
 	futhark $(LYS_BACKEND) --library $<
