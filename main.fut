@@ -1,8 +1,10 @@
 import "lys/lys"
 
 import "material"
-import "shapes"
+import "bvh"
 import "camera"
+
+module xbvh = fake_bvh
 
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
@@ -17,24 +19,15 @@ type~ state = { time: f32
               , mode: bool
               , cam: camera
               , mats: []material
-              , world: group }
+              , world: []geom }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
 
-let hit_group (bn: bounds) (r: ray) (xs: group) (mats: []material)
-            : maybe hit =
-  let select_min_hit a b =
-    match (a, b)
-    case (#nothing, _) -> b
-    case (_, #nothing) -> a
-    case (#just a', #just b') -> if a'.t < b'.t then a else b
-  in reduce select_min_hit #nothing (map (hit_geom bn r mats) xs)
-
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
-let color (r: ray) (world: group) (mats: []material) (rng: rnge)
+let color (r: ray) (world: xbvh.bvh_tree) (mats: []material) (rng: rnge)
         : vec3 =
   let bounds = { tmin = 0.0, tmax = f32.highest }
   --let sky = mkvec3 0.8 0.9 1.0
@@ -46,7 +39,7 @@ let color (r: ray) (world: group) (mats: []material) (rng: rnge)
     loop (throughput, light_source, r, rng, bounces) =
          (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 8u32)
     while bounces > 0 && vec3.norm throughput > 0.01
-    do match hit_group bounds r world mats
+    do match xbvh.hit_bvh bounds r mats world
        case #just hit' ->
          if vec3.norm hit'.mat.emission > 0
          then (throughput, hit'.mat.emission, r, rng, 0)
@@ -95,7 +88,9 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale coord.y vertical
             vec3.- origin)
 
-let sample (s: state)
+let sample (world: xbvh.bvh_tree)
+           (cam: camera)
+           (mats: []material)
            (w: f32, h: f32)
            (j: u32, i: u32)
            (offset: vec2)
@@ -105,10 +100,11 @@ let sample (s: state)
   let ratio = w / h
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
-  let r = get_ray s.cam ratio xy rng
-  in color r s.world s.mats rng
+  let r = get_ray cam ratio xy rng
+  in color r world mats rng
 
 let sample_all (s: state): (rnge, [][]vec3) =
+  let world_bvh = xbvh.build_bvh s.world
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
@@ -120,7 +116,9 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample s
+    in (vec3./) (sample world_bvh
+                        s.cam
+                        s.mats
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
                         offset rng)
