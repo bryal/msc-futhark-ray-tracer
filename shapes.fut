@@ -1,5 +1,11 @@
 import "common"
 
+-- TODO: Benchmark if it's faster to represent an aabb as a pair of
+-- (top-forward-rightmost corner, bot-backward-leftmost corner).
+--
+-- Axis Aligned Bounding Box for use with BVHs
+type aabb = { center: vec3, height: f32, width: f32, depth: f32 }
+
 let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
 
 let hit_triangle (bn: bounds) (ra: ray) (tr: triangle)
@@ -49,3 +55,20 @@ let hit_geom (bn: bounds) (r: ray) (ms: []material) (g: geom)
   match g
   case #sphere s -> hit_sphere bn r s
   case #triangle t -> hit_triangle bn r t ms
+
+let bounding_box_sphere (s: sphere): aabb =
+  let diam = s.radius * 2
+  in { height = diam, width = diam, depth = diam, center = s.center }
+
+let bounding_box_triangle (t: triangle): aabb =
+  let mx = vmax3 t.a t.b t.c
+  let mn = vmin3 t.a t.b t.c
+  in { center = vec3.scale (1/3) (t.a vec3.+ t.b vec3.+ t.c)
+     , height = mx.y - mn.y
+     , width = mx.x - mn.x
+     , depth = mx.z - mn.z }
+
+let bounding_box_geom (g: geom): aabb =
+  match g
+  case #sphere s -> bounding_box_sphere s
+  case #triangle t -> bounding_box_triangle t

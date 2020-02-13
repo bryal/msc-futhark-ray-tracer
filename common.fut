@@ -67,3 +67,15 @@ let point_at_param (r: ray) (t: f32): vec3 =
   r.origin vec3.+ vec3.scale t r.dir
 
 let inv_pi: f32 = 1.0 / f32.pi
+
+let vmax (u: vec3) (v: vec3): vec3 =
+  vec3.map2 f32.max u v
+
+let vmax3 (u: vec3) (v: vec3) (w: vec3): vec3 =
+  vmax u (vmax v w)
+
+let vmin (u: vec3) (v: vec3): vec3 =
+  vec3.map2 f32.min u v
+
+let vmin3 (u: vec3) (v: vec3) (w: vec3): vec3 =
+  vmin u (vmin v w)
