@@ -4,7 +4,7 @@ import "material"
 import "bvh"
 import "camera"
 
-module xbvh = fake_bvh
+module xbvh = lbvh
 
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
@@ -27,11 +27,11 @@ let vcol_to_argb (c: vec3): argb.colour =
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
-let color (r: ray) (world: xbvh.bvh_tree) (mats: []material) (rng: rnge)
+let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let bounds = { tmin = 0.0, tmax = f32.highest }
-  --let sky = mkvec3 0.8 0.9 1.0
-  let sky = mkvec3 0 0 0
+  let sky = mkvec3 0.8 0.9 1.0
+  -- let sky = mkvec3 0 0 0
   -- TODO: Use russian roulette termination. See PBR Book 13.7.
   --       Current method is not quite physically correct, just
   --       unlikely to produce a bad result.
@@ -88,7 +88,7 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale coord.y vertical
             vec3.- origin)
 
-let sample (world: xbvh.bvh_tree)
+let sample (world: xbvh.bvh)
            (cam: camera)
            (mats: []material)
            (w: f32, h: f32)
@@ -101,6 +101,7 @@ let sample (world: xbvh.bvh_tree)
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let r = get_ray cam ratio xy rng
+  let r = xbvh.transform_ray world r
   in color r world mats rng
 
 let sample_all (s: state): (rnge, [][]vec3) =

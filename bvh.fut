@@ -1,15 +1,21 @@
+import "radix_tree"
 import "shapes"
+import "lib/github.com/diku-dk/sorts/radix_sort"
 
 module type bvh = {
-  type~ bvh_tree
+  type~ bvh
 
-  val build_bvh [n]: [n]geom -> bvh_tree
+  val build_bvh [n]: [n]geom -> bvh
 
-  val hit_bvh [m]: bounds -> ray -> [m]material -> bvh_tree -> maybe hit
+  -- Assumes the ray is in the BVH's space, i.e. has already been
+  -- transformed with `transform_ray`.
+  val hit_bvh [m]: bounds -> ray -> [m]material -> bvh -> maybe hit
+
+  val transform_ray: bvh -> ray -> ray
 }
 
 module fake_bvh: bvh = {
-  type~ bvh_tree = []geom
+  type~ bvh = []geom
 
   let build_bvh = id
 
@@ -20,25 +26,143 @@ module fake_bvh: bvh = {
       case (_, #nothing) -> a
       case (#just a', #just b') -> if a'.t < b'.t then a else b
     in reduce select_min_hit #nothing (map (hit_geom bn r mats) xs)
+
+  let transform_ray _ = id
 }
 
-module dumb_bvh: bvh = {
-  type node = #node { left: i32, bb: aabb, right: i32} | #leaf i32
+let morton_n_bits: u32 = 30
+let morton_component_n_bits: u32 = morton_n_bits / 3
+let morton_component_max_val: f32 =
+  f32.u32 (2**morton_component_n_bits - 1)
 
-  type~ bvh_tree = #empty | #nonempty { leaves: []geom, nodes: []node }
+-- Expands a 10-bit integer into 30 bits by inserting 2 zeros after
+-- each bit.
+let expand_bits (x: u32): u32 =
+    let x = (x * 0x00010001) & 0xFF0000FF
+    let x = (x * 0x00000101) & 0x0F00F00F
+    let x = (x * 0x00000011) & 0xC30C30C3
+    let x = (x * 0x00000005) & 0x49249249
+    in x
 
-  let build_bvh xs =
-    let n = length xs
-    in if n == 0
-       then #empty
-       else let depth = f32.floor (f32.log2 n)
-            let n_spills = n % (2 ** depth)
-  -- TODO
-  --
-  -- Train of thought:
-  -- At last (full) level: For each child at that level: Get "my" index by (i + 2) % 2^level.
-  -- Compary my index to number of spills to know if I have 2 children or one.
-  -- Compute child index by doing something like (my index - n_spills + n_spills * 2)
+-- Calculates a 30-bit Morton code for the given 3D point located
+-- within the unit cube [0,1].
+--
+-- Morton code: (X0X1X2..., Y0Y1Y2..., Z0Z1Z2...)
+--           => X0Y0Z0X1Y1Z1X2Y2Z2...
+--
+-- Uses Karras's method from
+-- "Thinking Parallel, Part III: Tree Construction on the GPU"
+let morton3D (v: vec3): u32 =
+  let { x, y, z } = vmin (vec3.scale (morton_component_max_val + 1) v)
+                         (mkvec3_repeat morton_component_max_val)
+  let (xx, yy, zz) = ( expand_bits (u32.f32 x)
+                     , expand_bits (u32.f32 y)
+                     , expand_bits (u32.f32 z) )
+  in xx * 4 + yy * 2 + zz
 
-  let hit_bvh bn r mats xs = _
+module lbvh: bvh = {
+  type node = { aabb: aabb, left: ptr, right: ptr, parent: i32 }
+
+  type~ bvh =
+    -- The tree has its own unit-cube space. Everything must be
+    -- transformed into it.
+    { bounds: aabb
+    , leaves: []geom
+    , nodes: []node }
+
+  let transform_point (bounds: aabb) (p: vec3): vec3 =
+    (p vec3.- aabb_min_corner bounds) vec3./ aabb_dimensions bounds
+
+  let transform_dir (bounds: aabb) (v: vec3): vec3 =
+    v vec3./ aabb_dimensions bounds
+
+  let transform_ray (bvh: bvh) (r: ray): ray =
+    { origin = transform_point bvh.bounds r.origin
+    , dir = transform_dir bvh.bounds r.dir }
+
+  let transform_aabb (bounds: aabb) (b: aabb): aabb =
+    { center = transform_point bounds b.center
+    , half_dims = transform_dir bounds b.half_dims }
+
+  -- TODO: Either remove spheres, add ellipsoids, or add something
+  -- like a #transform variant that can associate a transformation
+  -- with a primitive.
+  let transform_sphere (bounds: aabb) (s: sphere): sphere =
+    { center = transform_point bounds s.center
+    , mat = s.mat
+    , radius = s.radius / (aabb_dimensions bounds).x }
+
+  let transform_triangle (bounds: aabb) (t: triangle): triangle =
+    { a = transform_point bounds t.a
+    , b = transform_point bounds t.b
+    , c = transform_point bounds t.c
+    , mat_ix = t.mat_ix }
+
+  let transform_geom (bounds: aabb) (g: geom): geom =
+    match g
+    case #sphere s -> #sphere (transform_sphere bounds s)
+    case #triangle t -> #triangle (transform_triangle bounds t)
+
+  let build_bvh [n] (xs: [n]geom): bvh =
+    let aabbs = map bounding_box_geom xs
+    let neutral_aabb = { center = mkvec3 0 0 0
+                       , half_dims = mkvec3_repeat (-f32.inf) }
+    let bounds = reduce_comm containing_aabb neutral_aabb aabbs
+    -- Transform into BVH space
+    let ys = map2 (\x b -> let b' = transform_aabb bounds b
+                           in ( transform_geom bounds x
+                              , b'
+                              , morton3D b'.center ))
+                  xs aabbs
+    let (xs, aabbs, mortons) =
+      unzip3 (radix_sort_by_key (.2) u32.num_bits u32.get_bit ys)
+    let I = radix_tree.mk mortons
+
+    -- TODO: This is so wasteful! Is there really no better way of
+    -- doing it? Is it even that much faster than doing it
+    -- sequentially, considering how many wasted computations there
+    -- are. Consider the case where the number of internal nodes is
+    -- way to big for the GPU to handle in one "round". Bench this.
+    let initial_empty_aabb { left, right, parent } =
+      { aabb = { center = mkvec3 0 0 0, half_dims = mkvec3 0 0 0 }
+      , left, right, parent }
+    let I = map initial_empty_aabb I
+    let depth = i32.f32 (f32.log2 (f32.i32 n)) + 2
+    let get_aabb inners ptr =
+      match ptr
+      case #leaf i -> unsafe aabbs[i]
+      case #internal i -> unsafe inners[i].aabb
+    let update inners { aabb = _, left, right, parent} =
+      { aabb = containing_aabb (get_aabb inners left)
+                               (get_aabb inners right)
+      , left, right, parent }
+    let I = loop I
+            for _i < depth
+            do map (update I) I
+    in { bounds, leaves = xs, nodes = I }
+
+  let hit_bvh (bn: bounds) (r: ray) (ms: []material) (t: bvh)
+            : maybe hit =
+    let (closest, _, _, _) =
+      loop (closest, bn, current, prev) = (-1, bn, 0, #internal (-1))
+      while current != -1
+      do let node = unsafe t.nodes[current]
+         let rec_child: maybe ptr =
+           if prev == node.left
+           then #just node.right
+           else if prev != node.right && hit_aabb bn r node.aabb
+           then #just node.left
+           else #nothing
+         in match rec_child
+            case #nothing -> (closest, bn, node.parent, #internal current)
+            case #just ptr ->
+              match ptr
+              case #internal i -> (closest, bn, i, #internal current)
+              case #leaf i ->
+                match hit_geom bn r ms (unsafe t.leaves[i])
+                case #just hit -> (i, bn with tmax = hit.t, current, ptr)
+                case #nothing -> (closest, bn, current, ptr)
+    in if closest >= 0
+       then hit_geom bn r ms (unsafe t.leaves[closest])
+       else #nothing
 }
