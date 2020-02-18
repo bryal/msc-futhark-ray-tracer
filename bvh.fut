@@ -7,11 +7,7 @@ module type bvh = {
 
   val build_bvh [n]: [n]geom -> bvh
 
-  -- Assumes the ray is in the BVH's space, i.e. has already been
-  -- transformed with `transform_ray`.
   val hit_bvh [m]: bounds -> ray -> [m]material -> bvh -> maybe hit
-
-  val transform_ray: bvh -> ray -> ray
 }
 
 module fake_bvh: bvh = {
@@ -26,8 +22,6 @@ module fake_bvh: bvh = {
       case (_, #nothing) -> a
       case (#just a', #just b') -> if a'.t < b'.t then a else b
     in reduce select_min_hit #nothing (map (hit_geom bn r mats) xs)
-
-  let transform_ray _ = id
 }
 
 let morton_n_bits: u32 = 30
@@ -70,52 +64,18 @@ module lbvh: bvh = {
     , leaves: []geom
     , nodes: []node }
 
-  let transform_point (bounds: aabb) (p: vec3): vec3 =
-    (p vec3.- aabb_min_corner bounds) vec3./ aabb_dimensions bounds
-
-  let transform_dir (bounds: aabb) (v: vec3): vec3 =
-    v vec3./ aabb_dimensions bounds
-
-  let transform_ray (bvh: bvh) (r: ray): ray =
-    { origin = transform_point bvh.bounds r.origin
-    , dir = transform_dir bvh.bounds r.dir }
-
-  let transform_aabb (bounds: aabb) (b: aabb): aabb =
-    { center = transform_point bounds b.center
-    , half_dims = transform_dir bounds b.half_dims }
-
-  -- TODO: Either remove spheres, add ellipsoids, or add something
-  -- like a #transform variant that can associate a transformation
-  -- with a primitive.
-  let transform_sphere (bounds: aabb) (s: sphere): sphere =
-    { center = transform_point bounds s.center
-    , mat = s.mat
-    , radius = s.radius / (aabb_dimensions bounds).x }
-
-  let transform_triangle (bounds: aabb) (t: triangle): triangle =
-    { a = transform_point bounds t.a
-    , b = transform_point bounds t.b
-    , c = transform_point bounds t.c
-    , mat_ix = t.mat_ix }
-
-  let transform_geom (bounds: aabb) (g: geom): geom =
-    match g
-    case #sphere s -> #sphere (transform_sphere bounds s)
-    case #triangle t -> #triangle (transform_triangle bounds t)
-
   let build_bvh [n] (xs: [n]geom): bvh =
     let aabbs = map bounding_box_geom xs
     let neutral_aabb = { center = mkvec3 0 0 0
                        , half_dims = mkvec3_repeat (-f32.inf) }
     let bounds = reduce_comm containing_aabb neutral_aabb aabbs
-    -- Transform into BVH space
-    let ys = map2 (\x b -> let b' = transform_aabb bounds b
-                           in ( transform_geom bounds x
-                              , b'
-                              , morton3D b'.center ))
-                  xs aabbs
+    let normalise_position p =
+      (p vec3.- aabb_min_corner bounds) vec3./ aabb_dimensions bounds
+    let mortons = map (morton3D <-< normalise_position <-< (.center))
+                      aabbs
     let (xs, aabbs, mortons) =
-      unzip3 (radix_sort_by_key (.2) u32.num_bits u32.get_bit ys)
+      unzip3 (radix_sort_by_key (.2) u32.num_bits u32.get_bit
+                                (zip3 xs aabbs mortons))
     let I = radix_tree.mk mortons
 
     -- TODO: This is so wasteful! Is there really no better way of

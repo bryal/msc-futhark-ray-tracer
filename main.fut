@@ -101,7 +101,6 @@ let sample (world: xbvh.bvh)
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let r = get_ray cam ratio xy rng
-  let r = xbvh.transform_ray world r
   in color r world mats rng
 
 let sample_all (s: state): (rnge, [][]vec3) =
