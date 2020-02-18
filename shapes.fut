@@ -56,23 +56,6 @@ let hit_geom (bn: bounds) (r: ray) (ms: []material) (g: geom)
   case #sphere s -> hit_sphere bn r s
   case #triangle t -> hit_triangle bn r t ms
 
-let bounding_box_sphere (s: sphere): aabb =
-  { center = s.center
-  , half_dims = mkvec3 s.radius s.radius s.radius }
-
-let bounding_box_triangle (t: triangle): aabb =
-  let mx = vmax3 t.a t.b t.c
-  let mn = vmin3 t.a t.b t.c
-  in { center = vec3.scale (1/3) (t.a vec3.+ t.b vec3.+ t.c)
-     , half_dims = vec3.scale 0.5 (mkvec3 (mx.x - mn.x)
-                                  (mx.y - mn.y)
-                                  (mx.z - mn.z)) }
-
-let bounding_box_geom (g: geom): aabb =
-  match g
-  case #sphere s -> bounding_box_sphere s
-  case #triangle t -> bounding_box_triangle t
-
 let aabb_min_corner (b: aabb): vec3 =
   b.center vec3.- b.half_dims
 
@@ -88,14 +71,35 @@ let containing_aabb (b1: aabb) (b2: aabb): aabb =
   in { center
      , half_dims = max_corner vec3.- center }
 
+let bounding_box_point (p: vec3): aabb =
+  { center = p, half_dims = mkvec3 0 0 0 }
+
+let bounding_box_sphere (s: sphere): aabb =
+  { center = s.center
+  , half_dims = mkvec3 s.radius s.radius s.radius }
+
+let bounding_box_triangle (t: triangle): aabb =
+  let a = bounding_box_point t.a
+  let b = bounding_box_point t.b
+  let c = bounding_box_point t.c
+  in containing_aabb a (containing_aabb b c)
+
+let bounding_box_geom (g: geom): aabb =
+  match g
+  case #sphere s -> bounding_box_sphere s
+  case #triangle t -> bounding_box_triangle t
+
 -- TODO: Also look at
 -- http://www.pbr-book.org/3ed-2018/Shapes/Basic_Shape_Interface.html#Bounds3::IntersectP
-let hit_aabb ({tmax, tmin}: bounds) ({origin, dir}: ray) (b: aabb): bool =
+let hit_aabb ({tmin, tmax}: bounds) ({origin, dir}: ray) (b: aabb)
+           : bool =
+  let eps = 0.001
   let iter min' max' origin' dir' tmin tmax =
     let invD = 1 / dir'
     let t0 = (min' - origin') * invD
     let t1 = (max' - origin') * invD
     let (t0, t1) = if invD < 0 then (t1, t0) else (t0, t1)
+    let t1 = t1 * (1 + eps)
     let tmin = f32.max t0 tmin
     let tmax = f32.min t1 tmax
     in (tmin, tmax)
