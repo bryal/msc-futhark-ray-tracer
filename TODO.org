@@ -41,3 +41,16 @@
   E.g. "catastrophic cancellation". See PBR Book 3.9.
 * INACTIVE Textures :optional:
 * INACTIVE Normal- / bump maps :optional:
+* NEXT Lens distortion
+  Compare using post-processing distortion maps with somehow
+  implementing the lens parameters in the ray tracer. Simplified test
+  to justify us not implementing a complex lens system (the hypothesis
+  is that distortion maps will do just fine).
+
+  Use some simple model, something like OpenCVs radial distortion:
+  https://docs.opencv.org/2.4/modules/calib3d/doc/camera_calibration_and_3d_reconstruction.html
+* INACTIVE Ensure conservation of energy
+  Make sure that the material models we use are all compatible and
+  that conservation of energy holds. Maybe somewhat optional, as we're
+  implementing a somewhat simplified system, but should still very
+  much be considered.
