@@ -7,6 +7,8 @@
 
 type ptr = #internal i32 | #leaf i32
 
+local let div_rounding_up x y: i32 = (x + y - 1) / y
+
 module radix_tree = {
   type node = { left: ptr, right: ptr, parent: i32 }
 
@@ -44,12 +46,13 @@ module radix_tree = {
       let j = i + l * d
       -- Find the split position using binary search
       let delta_node = delta i j
-      let (s, _) = loop (s, t) = (0, (l + 1) / 2)
-                   while t >= 1
-                   do let s = if delta i (i + (s + t) * d) > delta_node
+      let (s, _) = loop (s, q) = (0, 1)
+                   while q <= l
+                   do let t = div_rounding_up l (q * 2)
+                      let s = if delta i (i + (s + t) * d) > delta_node
                               then s + t
                               else s
-                      in (s, t / 2)
+                      in (s, q * 2)
       let gamma = i + s * d + i32.min d 0
       -- Output child pointers
       let (left, left_internal_child) =
