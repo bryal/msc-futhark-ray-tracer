@@ -186,7 +186,7 @@ module lys: lys with text_content = text_content = {
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 0.8 1.8
+            , origin = mkvec3 0 1.8 2.5
             , aperture = 0.0, focal_dist = 1.5 }
     , mats = parse_mats mat_data
     , world = parse_triangles tri_geoms tri_mats }
