@@ -50,27 +50,18 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
     let error_mat = [1000.0, 0.0, 1000.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
     let mut mats = vec![error_mat];
     for m in materials {
-        let metalness = m
-            .unknown_param
-            .get("Pm")
-            .map(|s| s.parse::<f32>().expect("Metalness (Pm) of float"))
-            .unwrap_or(0.0);
-        let emission = m
-            .unknown_param
-            .get("Ke")
-            .map(|s| {
-                s.split_whitespace()
-                    .map(|t| t.parse::<f32>().expect("Ke triple of float"))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or(vec![0.0, 0.0, 0.0]);
+        let color = m.diffuse;
+        let roughness = get_scalar(m, "Pr");
+        let metalness = get_scalar(m, "Pm");
+        let ref_ix = m.optical_density;
+        let emission = get_vec3(m, "Ke");
         let mat = [
-            m.diffuse[0],
-            m.diffuse[1],
-            m.diffuse[2],
-            shininess_to_fuzz(m.shininess),
+            color[0],
+            color[1],
+            color[2],
+            roughness,
             metalness,
-            m.optical_density,
+            ref_ix,
             emission[0],
             emission[1],
             emission[2],
@@ -79,6 +70,33 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
     }
     println!("no of triangles: {:?}", tris.len() / 9);
     (tris, tri_mats, mats.concat())
+}
+
+fn parse_scalar(s: &str) -> f32 {
+    s.parse::<f32>().expect("Scalar parameter")
+}
+
+fn parse_vec3(s: &str) -> [f32; 3] {
+    let v = s
+        .split_whitespace()
+        .map(|t| t.parse::<f32>().unwrap())
+        .collect::<Vec<_>>();
+    if v.len() != 3 {
+        panic!("Expected 3-vector parameter")
+    } else {
+        [v[0], v[1], v[2]]
+    }
+}
+
+fn get_scalar(m: &tobj::Material, field: &str) -> f32 {
+    m.unknown_param.get(field).map(parse_scalar).unwrap_or(0.0)
+}
+
+fn get_vec3(m: &tobj::Material, field: &str) -> [f32; 3] {
+    m.unknown_param
+        .get(field)
+        .map(parse_vector)
+        .unwrap_or([0.0, 0.0, 0.0])
 }
 
 fn shininess_to_fuzz(s: f32) -> f32 {
