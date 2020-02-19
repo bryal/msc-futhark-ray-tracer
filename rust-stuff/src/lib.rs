@@ -78,6 +78,7 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
         mats.push(mat);
         println!("parsed mat: {:?}", mat);
     }
+    println!("no of triangles: {:?}", tris.len()/9);
     (tris, tri_mats, mats.concat())
 }
 
