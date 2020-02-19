@@ -10,7 +10,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\A_o_Escovado.jpg
+# map_Kd volvo 740 custom\A_o_Escovado.jpg
 
 newmtl A_o_Escovado1
 Ns 96.078431
@@ -31,7 +31,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\Aluminum.jpg
+# map_Kd volvo 740 custom\Aluminum.jpg
 
 newmtl Banco_RECARO
 Ns 96.078431
@@ -82,7 +82,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\Cinto_Takata.jpg
+# map_Kd volvo 740 custom\Cinto_Takata.jpg
 
 newmtl Color_000
 Ns 96.078431
@@ -293,7 +293,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\Formica_Speckled_Grey.jpg
+# map_Kd volvo 740 custom\Formica_Speckled_Grey.jpg
 
 newmtl FrontColor
 Ns 96.078431
@@ -434,7 +434,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\Metal_Corrogated_Shiny.jpg
+# map_Kd volvo 740 custom\Metal_Corrogated_Shiny.jpg
 
 newmtl Pe_as___A_o_Escovado
 Ns 96.078431
@@ -445,7 +445,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\Pe_as___A_o_Escovado.jpg
+# map_Kd volvo 740 custom\Pe_as___A_o_Escovado.jpg
 
 newmtl Preto__Fosco
 Ns 96.078431
@@ -526,7 +526,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\Volvo_logo_CD32D5B4CE_seeklogo_com.jpg
+# map_Kd volvo 740 custom\Volvo_logo_CD32D5B4CE_seeklogo_com.jpg
 
 newmtl _0020_Red_3
 Ns 96.078431
@@ -587,7 +587,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\_Blinds_Cellular_White_1.jpg
+# map_Kd volvo 740 custom\_Blinds_Cellular_White_1.jpg
 
 newmtl _Color_003_1
 Ns 96.078431
@@ -658,7 +658,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd volvo 740 custom\_Metal_Rough_3.jpg
+# map_Kd volvo 740 custom\_Metal_Rough_3.jpg
 
 newmtl dash
 Ns 96.078431
