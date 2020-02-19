@@ -20,7 +20,7 @@ type maybe 't = #nothing | #just t
 -- TODO: Make hierarchical-like and more physically based
 type material =
   { color: vec3
-  , fuzz: f32
+  , roughness: f32
   , metalness: f32
   , ref_ix: f32
   , emission: vec3 }

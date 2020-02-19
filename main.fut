@@ -149,7 +149,7 @@ let parse_triangles [t]
 
 let parse_mat (m: [9]f32): material =
   { color = mkvec3 m[0] m[1] m[2]
-  , fuzz = m[3]
+  , roughness = m[3]
   , metalness = m[4]
   , ref_ix = m[5]
   , emission = mkvec3 m[6] m[7] m[8] }
