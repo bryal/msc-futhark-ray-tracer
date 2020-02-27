@@ -23,5 +23,5 @@ let move_camera (cam: camera) (m: vec3): camera =
                        vec3.+ vec3.scale (0.1*m.y) world_up
 
 let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
-  cam with pitch = clamp (-0.5*f32.pi) (0.5*f32.pi) (cam.pitch + pitch)
+  cam with pitch = clamp (-0.5*f32.pi, 0.5*f32.pi) (cam.pitch + pitch)
       with yaw = (cam.yaw + yaw) % (2*f32.pi)

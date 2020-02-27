@@ -45,7 +45,7 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
          then (throughput, hit'.mat.emission, r, rng, 0)
          else
            let wo = vec3.scale (-1) r.dir
-           let { wi, bsdf, pdf } = uber_sample_dir wo hit' rng
+           let { wi, bsdf, pdf } = sample_dir wo hit' rng
            let rng = advance_rng rng
            let cosFalloff = vec3.dot hit'.normal wi
            let throughput =
@@ -58,7 +58,9 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
            -- strange artifacts for some materials at extreme angles.
            let acne_offset = vec3.scale (side * eps) hit'.normal
            let r = mkray (hit'.pos vec3.+ acne_offset) wi
-           in (throughput, light_source, r, rng, bounces - 1)
+           in if pdf == 0
+              then (mkvec3 0 0 0, light_source, r, rng, 0)
+              else (throughput, light_source, r, rng, bounces - 1)
        case #nothing ->
          (throughput, sky, r, rng, 0)
   in throughput vec3.* light_source

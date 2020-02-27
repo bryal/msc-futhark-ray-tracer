@@ -51,10 +51,10 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
     let mut mats = vec![error_mat];
     for m in materials {
         let color = m.diffuse;
-        let roughness = get_scalar(m, "Pr");
-        let metalness = get_scalar(m, "Pm");
+        let roughness = get_scalar(&m, "Pr");
+        let metalness = get_scalar(&m, "Pm");
         let ref_ix = m.optical_density;
-        let emission = get_vec3(m, "Ke");
+        let emission = get_vec3(&m, "Ke");
         let mat = [
             color[0],
             color[1],
@@ -89,17 +89,15 @@ fn parse_vec3(s: &str) -> [f32; 3] {
 }
 
 fn get_scalar(m: &tobj::Material, field: &str) -> f32 {
-    m.unknown_param.get(field).map(parse_scalar).unwrap_or(0.0)
+    m.unknown_param
+        .get(field)
+        .map(|s| parse_scalar(&s))
+        .unwrap_or(0.0)
 }
 
 fn get_vec3(m: &tobj::Material, field: &str) -> [f32; 3] {
     m.unknown_param
         .get(field)
-        .map(parse_vector)
+        .map(|s| parse_vec3(&s))
         .unwrap_or([0.0, 0.0, 0.0])
-}
-
-fn shininess_to_fuzz(s: f32) -> f32 {
-    // Logistic curve
-    2.0 * (1.0 / (1.0 + (-(1.0 / 1000.0) * s).exp()) - 0.5)
 }
