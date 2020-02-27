@@ -2,21 +2,6 @@
   Completed <2020-02-06>.  We did the things. Done in time. Went
   pretty well. Some details on comments and the git commit messages.
 
-* TODO Prepare kickoff presentation
-  Slides are mostly finished, very basic. Still need to add a video,
-  maybe send the slides to Siddhant, & prepare scrip / practice the
-  presentation.
-* Implement .mtl loading
-** DONE Simplified, partial loading. Not all properties respected
-
-** NEXT Adjust for more physically based materials
-   http://exocortex.com/blog/extending_wavefront_mtl_to_support_pbr
-   https://disney-animation.s3.amazonaws.com/library/s2012_pbs_disney_brdf_notes_v2.pdf
-
-* DONE Implement BVH
-  We implemented the LBVH of Lauterbach(2009)+Karras(2012). Relatively
-  simple code, but the improvement compared to no BVH is huge.
-
 * INACTIVE Better / different BVHs                                 :optional:
   Also implement at least a BVH that is slower to construct, but of
   better quality for use with static scenes.
@@ -26,6 +11,8 @@
 ** BRDF, PDF, & Importance sampling
    I.e. physically accurate sampling distributions.
 
+* NEXT Improve metal material
+  Consider complex fresnel coefficients.
 * NEXT LIDAR
 
 * NEXT Generalize
