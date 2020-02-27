@@ -41,23 +41,23 @@ newmtl backWall
   Kd 1.0 1.0 1.0
   Pr 0.0
   Pm 1.0
-  Ni 3.0
+  Ni 50.0
   Ke 0 0 0
 
 # Metallic
 newmtl shortBox
-  Kd 0.725 0.71 1.0
-  Pr 0.2
+  Kd 0.9 0.6 0.1
+  Pr 0.04
   Pm 1.0
-  Ni 2.7
+  Ni 6.0
   Ke 0 0 0
 
 # Glossy
 newmtl tallBox
-  Kd 1.0 1.0 0.68
-  Pr 0.2
+  Kd 0.725 0.71 0.68
+  Pr 1.0
   Pm 0.0
-  Ni 1.7
+  Ni 1.0
   Ke 0 0 0
 
 newmtl light
