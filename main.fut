@@ -25,8 +25,7 @@ let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
 
 let advance_rng (rng: rnge): rnge =
-  let (rng, _) = dist.rand (0,1) rng in rng
-
+  let (rng, _) = dist.rand (0,1) rng in rng 
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let bounds = { tmin = 0.0, tmax = f32.highest }
@@ -167,7 +166,7 @@ let upscale (full_w: i32, full_h: i32)
               (\i j -> unsafe sub_img[ i / subsampling
                                      , j / subsampling ])
 
-type text_content = (u32, u32, u32, f32, f32)
+type text_content = (u32, u32, u32, f32, f32, u32)
 module lys: lys with text_content = text_content = {
   type~ state = state
 
@@ -262,13 +261,13 @@ module lys: lys with text_content = text_content = {
            (upscale dims sub s.img)
 
   let text_format () =
-    "FPS: %d\nSAMPLES: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f"
+    "FPS: %d\nSAMPLES: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f\nSUBSAMPLING: %d"
 
   type text_content = text_content
 
   let text_content (render_duration: f32) (s: state): text_content =
     ( u32.f32 render_duration, s.samples, s.n_frames
-    , s.cam.aperture, s.cam.focal_dist )
+    , s.cam.aperture, s.cam.focal_dist, s.subsampling )
 
   let text_colour = const argb.yellow
 }
