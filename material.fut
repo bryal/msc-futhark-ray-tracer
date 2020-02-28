@@ -211,20 +211,10 @@ let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
   then dielectric_reflection_sample_dir wo m rng
   else dielectric_refraction_sample_dir wo m rng
 
--- NOTE: Take care that in case of absorbtion, a 0-vector will be
---       returned.
 let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
                    : dir_sample =
-  -- let r = fresnel_reflectance wo m
-  let r = 1
-  let (rng, p) = dist.rand (0, 1) rng
-  in if p <= r
-     then let sample = dielectric_reflection_sample_dir wo m rng
-          in sample with bsdf = sample.bsdf vec3.* m.color
-                    with pdf = sample.pdf / r
-     else { wi = mkvec3 0 0 0
-          , bsdf = mkvec3 0 0 0
-          , pdf = 1 / (1 - r) }
+  let sample = dielectric_reflection_sample_dir wo m rng
+  in sample with bsdf = sample.bsdf vec3.* m.color
 
 -- Sample a direction accodring to a distribution that is similar to
 -- the material's corresponding BSDF distribution.
