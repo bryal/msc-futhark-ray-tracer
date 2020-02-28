@@ -1,7 +1,3 @@
-* DONE Ray tracing in One Weekend
-  Completed <2020-02-06>.  We did the things. Done in time. Went
-  pretty well. Some details on comments and the git commit messages.
-
 * INACTIVE Better / different BVHs                                 :optional:
   Also implement at least a BVH that is slower to construct, but of
   better quality for use with static scenes.
@@ -17,8 +13,16 @@
 
 * NEXT Generalize
 
+* NEXT Quasi-Monte Carlo (Sobol)
+  Try using quasi-Monte Carlo integration instead of what we currently
+  do, as it is more efficient (converges more quickly on
+  average). Instead of pseudo-random numbers, uses a low-discrepancy
+  sequence of quasi-random numbers, like the Sobol sequence. [[https://github.com/diku-dk/sobol][Futhark
+  has a Sobol library]].
 * INACTIVE Volumes (mist etc) :optional:
-
+  Could be interesting to model how visible light and infrared light
+  scatters differently, so lidar can perform better in certain weather
+  conditions like mist.
 * INACTIVE Particles/billboards (snow etc) :optional:
 
 * INACTIVE Rewrite host-code in Rust :optional:
