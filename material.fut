@@ -203,13 +203,20 @@ let dielectric_reflection_sample_dir (wo: vec3) (m: material) (rng: rnge)
           , bsdf = dielectric_reflection_bsdf wo wi m
           , pdf = pdf_wh / (4 * vec3.dot wo wh) }
 
+-- NOTE: May not respect conservation of energy properly, as we're
+--       just adapting Torrance-Sparrow to a fresnel-blend material
+--       intuitively. PBR book 8.5 talks more about this. Look at the
+--       Ashikhmin and Shirley model.
 let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
                         : dir_sample =
-  -- TODO: Russian roulette with Fresnel to decide whether to reflect
-  --       or refract
-  if false -- h.mat.ref_ix
-  then dielectric_reflection_sample_dir wo m rng
-  else dielectric_refraction_sample_dir wo m rng
+  let r = fresnel_reflectance wo m
+  let (rng, p) = random_unit_exclusive rng
+  in if p < r
+     then let s = dielectric_reflection_sample_dir wo m rng
+          in s with pdf = s.pdf * r
+     else let s = dielectric_refraction_sample_dir wo m rng
+          in s with bsdf = vec3.scale (1 - r) s.bsdf
+               with pdf = s.pdf * (1 - r)
 
 let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
                    : dir_sample =
@@ -220,8 +227,8 @@ let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
 -- the material's corresponding BSDF distribution.
 let uber_sample_dir (wo: vec3) (m: material) (rng: rnge)
                   : dir_sample =
-  let (rng, p) = dist.rand (0, 1) rng
-  in if p <= m.metalness
+  let (rng, p) = random_unit_exclusive rng
+  in if p < m.metalness
      then metal_sample_dir wo m rng
      else dielectric_sample_dir wo m rng
 
