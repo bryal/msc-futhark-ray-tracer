@@ -1,0 +1,178 @@
+# The original Cornell Box in OBJ format.
+# Note that the real box is not a perfect cube, so
+# the faces are imperfect in this data set.
+#
+# Created by Guedis Cardenas and Morgan McGuire at Williams College, 2011
+# Released into the Public Domain.
+#
+# http://graphics.cs.williams.edu/data
+# http://www.graphics.cornell.edu/online/box/data.html
+#
+
+mtllib MirrorBox.mtl
+
+## Object floor
+v  -1.0  0.0   1.0
+v   1.0  0.0   1.0
+v   1.0  0.0  -1.0
+v  -1.0  0.0  -1.0
+
+g floor
+usemtl mirror
+f -4 -3 -2 -1
+
+## Object ceiling
+v  -1.0  2.0   1.0
+v  -1.0  2.0  -1.0
+v   1.0  2.0  -1.0
+v   1.0  2.0   1.0
+
+g ceiling
+usemtl mirror
+f -4 -3 -2 -1
+
+## Object backwall
+v  -1.0  0.0  -1.0
+v   1.0  0.0  -1.0
+v   1.0  2.0  -1.0
+v  -1.0  2.0  -1.0
+
+g backWall
+usemtl mirror
+f -4 -3 -2 -1
+
+## Object frontwall
+v  -1.0  0.0  1.0
+v   1.0  0.0  1.0
+v   1.0  2.0  1.0
+v  -1.0  2.0  1.0
+
+g frontWall
+usemtl mirror
+f -1 -2 -3 -4
+
+## Object rightwall
+v	1.0  0.0  -1.0
+v	1.0  0.0   1.0
+v	1.0  2.0   1.0
+v	1.0  2.0  -1.0
+
+g rightWall
+usemtl mirror
+f -4 -3 -2 -1
+
+## Object leftWall
+v  -1.0  0.0   1.0
+v  -1.0  0.0  -1.0
+v  -1.0  2.0  -1.0
+v  -1.0  2.0   1.0
+
+g leftWall
+usemtl mirror
+f -4 -3 -2 -1
+
+## Object shortBox
+usemtl shortBox
+
+# Top Face
+v	0.5  0.6   0.8
+v	0.7  0.6   0.2
+v	0.1  0.6   0.0
+v	-0.1  0.6   0.6
+f -4 -3 -2 -1
+
+# Left Face
+v  -0.1  0.0  0.6
+v  -0.1  0.6  0.6
+v   0.1  0.6  0.0
+v   0.1  0.0  0.0
+f -4 -3 -2 -1
+
+# Front Face
+v   0.5  0.0   0.8
+v   0.5  0.6   0.8
+v  -0.1  0.6   0.6
+v  -0.1  0.0   0.6
+f -4 -3 -2 -1
+
+# Right Face
+v   0.7  0.0   0.2
+v   0.7  0.6   0.2
+v   0.5  0.6   0.8
+v   0.5  0.0   0.8
+f -4 -3 -2 -1
+
+# Back Face
+v	0.1  0.0   0.0
+v	0.1  0.6   0.0
+v	0.7  0.6   0.2
+v	0.7  0.0   0.2
+f -4 -3 -2 -1
+
+# Bottom Face
+v	0.5  0.0   0.8
+v	0.7  0.0   0.2
+v	0.1  0.0   0.0
+v  -0.1  0.0   0.6
+f -12 -11 -10 -9
+
+g shortBox
+usemtl shortBox
+
+## Object tallBox
+usemtl tallBox
+
+# Top Face
+v	-0.5  1.2   0.1
+v	 0.0  1.2  -0.1
+v	-0.1  1.2  -0.7
+v	-0.7  1.2  -0.5
+f -4 -3 -2 -1
+
+# Left Face
+v	-0.5  0.0   0.1
+v	-0.5  1.2   0.1
+v	-0.7  1.2  -0.5
+v	-0.7  0.0  -0.5
+f -4 -3 -2 -1
+
+# Back Face
+v	-0.7  0.0  -0.5
+v	-0.7  1.2  -0.5
+v	-0.1  1.2  -0.7
+v	-0.1  0.0  -0.7
+f -4 -3 -2 -1
+
+# Right Face
+v	-0.1  0.0  -0.7
+v	-0.1  1.2  -0.7
+v	 0.0  1.2  -0.1
+v	 0.0  0.0  -0.1
+f -4 -3 -2 -1
+
+# Front Face
+v	 0.0  0.0  -0.1
+v	 0.0  1.2  -0.1
+v	-0.5  1.2   0.1
+v	-0.5  0.0   0.1
+f -4 -3 -2 -1
+
+# Bottom Face
+v	-0.5  0.0   0.1
+v	 0.0  0.0  -0.1
+v	-0.1  0.0  -0.7
+v	-0.7  0.0  -0.5
+f -8 -7 -6 -5
+
+g tallBox
+usemtl tallBox
+
+## Object light
+v	-0.2  1.98   0.2
+v	-0.2  1.98  -0.2
+v	 0.2  1.98  -0.2
+v	 0.2  1.98   0.2
+
+g light
+usemtl light
+f -4 -3 -2 -1

@@ -37,7 +37,7 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
   --       unlikely to produce a bad result.
   let (throughput, light_source, _, _, _) =
     loop (throughput, light_source, r, rng, bounces) =
-         (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 8u32)
+         (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 12u32)
     while bounces > 0 && vec3.norm throughput > 0.01
     do match xbvh.hit_bvh bounds r mats world
        case #just hit' ->
