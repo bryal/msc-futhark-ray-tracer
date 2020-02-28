@@ -130,15 +130,26 @@ let self_shadowing_factor (alpha: f32) (wo: vec3) (wi: vec3): f32 =
   in 1 / (1 + lambda wo + lambda wi)
 
 let beckmann_alpha (roughness: f32): f32 =
-  let eps = 0.001
+  -- TODO: Investigate why the curve from the book becomes fuzzy so
+  --       fast! Understand this alpha value and the
+  --       Taylor-approximation properly.
+  --
+  -- Linear roughness:
+  --
+  let eps = 0.004
   let roughness = f32.max eps roughness
-  let x = f32.log roughness
-  -- A taylor expansion, but of what? Who knows.
-  in 1.62142
-     + 0.819955 * x
-     + 0.1734 * x * x
-     + 0.0171201 * x * x * x
-     + 0.000640711 * x * x * x * x
+  in 1.62142 * roughness
+  --
+  -- Nonlinear roughness:
+  --
+  -- let eps = 0.001
+  -- let roughness = f32.max eps roughness
+  -- let x = f32.log roughness
+  -- in 1.62142
+  --    + 0.819955 * x
+  --    + 0.1734 * x * x
+  --    + 0.0171201 * x * x * x
+  --    + 0.000640711 * x * x * x * x
 
 -- D * G in literature. Implementation of the Beckmann–Spizzichino
 -- model, based on PBR Book 8.4.2 & 8.4.3
