@@ -160,10 +160,14 @@ let microfacet_factor (wo: vec3) (wi: vec3) (m: material): f32 =
      * self_shadowing_factor alpha wo wi
 
 -- Torrance-Sparrow microfacet model
+--
+-- Note that F (the fresnel reflectance) is not included
+-- here. Instead, we sample reflection vs. refraction with a frequency
+-- of F, and leave the PDF-value unchanged. That accomplishes the same
+-- thing.
 let dielectric_reflection_bsdf (wo: vec3) (wi: vec3) (m: material): vec3 =
   mkvec3_repeat <|
-    fresnel_reflectance wo m
-    * microfacet_factor wo wi m
+    microfacet_factor wo wi m
     / (4 * cos_theta wo * cos_theta wi)
 
 -- Spherical angles to direction vector
@@ -212,11 +216,8 @@ let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
   let r = fresnel_reflectance wo m
   let (rng, p) = random_unit_exclusive rng
   in if p < r
-     then let s = dielectric_reflection_sample_dir wo m rng
-          in s with pdf = s.pdf * r
-     else let s = dielectric_refraction_sample_dir wo m rng
-          in s with bsdf = vec3.scale (1 - r) s.bsdf
-               with pdf = s.pdf * (1 - r)
+     then dielectric_reflection_sample_dir wo m rng
+     else dielectric_refraction_sample_dir wo m rng
 
 let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
                    : dir_sample =
