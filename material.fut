@@ -79,16 +79,46 @@ let diffuse_sample_dir (m: material) (rng: rnge): dir_sample =
   --       the case.
   in { wi, bsdf = diffuse_bsdf m.color, pdf = cos_theta wi * inv_pi }
 
-let refraction_sample_dir (_wo: vec3) (_m: material) (_rng: rnge)
-                        : { wi: vec3, bsdf: vec3, pdf: f32 } =
-  { wi = mkvec3 0 0 0, bsdf = mkvec3 0 0 0, pdf = 0 }
+-- PBR Book 8.2.3
+let refract (wi: vec3) (n: vec3) (eta: f32)
+          : #refraction vec3 | #total_internal_reflection vec3 =
+  let cos_theta_i = vec3.dot n wi
+  let sin2_theta_i = f32.max 0 (1 - cos_theta_i * cos_theta_i)
+  let sin2_theta_t = eta * eta * sin2_theta_i
+  in if sin2_theta_t >= 1
+     then #total_internal_reflection (reflect wi n)
+     else let cos_theta_t = f32.sqrt (1 - sin2_theta_t)
+          let wt = vec3.scale (-eta) wi
+                   vec3.+ vec3.scale (eta * cos_theta_i - cos_theta_t) n
+          in #refraction wt
+
+-- Either refract into / out of a transmitting material, or total
+-- internal reflection. PBR Book 8.2.3
+let transmission_sample_dir (wo: vec3) (m: material)
+                          : dir_sample =
+  let entering = cos_theta wo > 0
+  let eta_air = 1.0
+  let (n, eta) = if entering
+                 then (local_normal, eta_air / m.ref_ix)
+                 else (vec3_neg local_normal, m.ref_ix / eta_air)
+  in match refract wo n eta
+     case #refraction wi ->
+       { wi
+       , bsdf = mkvec3_repeat (1 / f32.abs (cos_theta wi))
+       , pdf = 1 }
+     case #total_internal_reflection wi ->
+       { wi
+       -- TODO: This BSDF may well be wrong. Fix somehow. It's up to
+       --       you, future us!
+       , bsdf = mkvec3_repeat (1 / f32.abs (cos_theta wi))
+       , pdf = 1 }
 
 let dielectric_refraction_sample_dir (wo: vec3) (m: material) (rng: rnge)
                                    : dir_sample =
-  -- TODO: Transmission or diffuse reflection
-  if false -- some opacity parameter of the material?
-  then refraction_sample_dir wo m rng
-  else diffuse_sample_dir m rng
+  let (rng, p) = random_unit_exclusive rng
+  in if p < m.opacity
+     then diffuse_sample_dir m rng
+     else transmission_sample_dir wo m
 
 -- TODO: Handle when we come from the inside, exiting. Like through
 --       glass.
@@ -213,11 +243,13 @@ let dielectric_reflection_sample_dir (wo: vec3) (m: material) (rng: rnge)
 --       Ashikhmin and Shirley model.
 let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
                         : dir_sample =
-  let r = fresnel_reflectance wo m
-  let (rng, p) = random_unit_exclusive rng
-  in if p < r
-     then dielectric_reflection_sample_dir wo m rng
-     else dielectric_refraction_sample_dir wo m rng
+  if cos_theta wo <= 0 -- Coming from the inside
+  then dielectric_refraction_sample_dir wo m rng
+  else let r = fresnel_reflectance wo m
+       let (rng, p) = random_unit_exclusive rng
+       in if p < r
+          then dielectric_reflection_sample_dir wo m rng
+          else dielectric_refraction_sample_dir wo m rng
 
 let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
                    : dir_sample =

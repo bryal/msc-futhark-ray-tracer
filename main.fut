@@ -25,7 +25,8 @@ let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
 
 let advance_rng (rng: rnge): rnge =
-  let (rng, _) = dist.rand (0,1) rng in rng 
+  let (rng, _) = dist.rand (0,1) rng in rng
+
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let bounds = { tmin = 0.0, tmax = f32.highest }
@@ -46,16 +47,18 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
            let wo = vec3.scale (-1) r.dir
            let { wi, bsdf, pdf } = sample_dir wo hit' rng
            let rng = advance_rng rng
-           let cosFalloff = vec3.dot hit'.normal wi
+           let face_forward_normal = if vec3.dot wi hit'.normal >= 0
+                                     then hit'.normal
+                                     else vec3_neg hit'.normal
+           let cosFalloff = vec3.dot face_forward_normal wi
            let throughput =
              throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
            let eps = 0.001
-           let side = if vec3.dot wi hit'.normal >= 0 then 1 else (-1)
            -- Fix surface acne
            --
            -- NOTE: Don't just walk along `wi`, because then we get
            -- strange artifacts for some materials at extreme angles.
-           let acne_offset = vec3.scale (side * eps) hit'.normal
+           let acne_offset = vec3.scale eps face_forward_normal
            let r = mkray (hit'.pos vec3.+ acne_offset) wi
            in if pdf == 0
               then (mkvec3 0 0 0, light_source, r, rng, 0)
@@ -148,14 +151,15 @@ let parse_triangles [t]
                  , mat_ix }
   in map2 f tris tri_mats
 
-let parse_mat (m: [9]f32): material =
+let parse_mat (m: [10]f32): material =
   { color = mkvec3 m[0] m[1] m[2]
   , roughness = m[3]
   , metalness = m[4]
   , ref_ix = m[5]
-  , emission = mkvec3 m[6] m[7] m[8] }
+  , opacity = m[6]
+  , emission = mkvec3 m[7] m[8] m[9] }
 
-let parse_mats (mats: [][9]f32): []material =
+let parse_mats (mats: [][10]f32): []material =
   map parse_mat mats
 
 let upscale (full_w: i32, full_h: i32)
@@ -176,7 +180,7 @@ module lys: lys with text_content = text_content = {
            (h: u32) (w: u32)
            (tri_geoms: [][3][3]f32)
            (tri_mats: []u32)
-           (mat_data: [][9]f32)
+           (mat_data: [][10]f32)
          : state =
     { time = 0
     , dimensions = (w, h)
@@ -187,7 +191,7 @@ module lys: lys with text_content = text_content = {
     , n_frames = 1
     , mode = false
     , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 1.8 2.5
+            , origin = mkvec3 0 0.8 1.8
             , aperture = 0.0, focal_dist = 1.5 }
     , mats = parse_mats mat_data
     , world = parse_triangles tri_geoms tri_mats }

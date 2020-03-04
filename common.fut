@@ -23,6 +23,7 @@ type material =
   , roughness: f32
   , metalness: f32
   , ref_ix: f32
+  , opacity: f32
   , emission: vec3 }
 
 type ray = { origin: vec3, dir: vec3 }

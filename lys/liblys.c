@@ -551,7 +551,7 @@ int main(int argc, char** argv) {
     struct futhark_u32_1d* fut_triangle_mats =
         futhark_new_u32_1d(ctx.fut, triangle_mats, (int64_t)num_tris);
     struct futhark_f32_2d* fut_mat_data =
-        futhark_new_f32_2d(ctx.fut, mat_data, (int64_t)num_mat_components / 9, 9);
+        futhark_new_f32_2d(ctx.fut, mat_data, (int64_t)num_mat_components / 10, 10);
 
     do_sdl(&ctx, allow_resize, fut_triangle_data, fut_triangle_mats, fut_mat_data);
 
