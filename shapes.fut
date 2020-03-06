@@ -6,9 +6,9 @@ import "common"
 -- Axis Aligned Bounding Box for use with BVHs
 type aabb = { center: vec3, half_dims: vec3  }
 
-let in_bounds (bn: bounds) (t: f32): bool = t < bn.tmax && t > bn.tmin
+let in_bounds (t: f32) (tmax: f32): bool = t < tmax && t > 0
 
-let hit_triangle (bn: bounds) (ra: ray) (tr: triangle)
+let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
                  (mats: []material)
                : maybe hit =
   -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
@@ -25,13 +25,13 @@ let hit_triangle (bn: bounds) (ra: ray) (tr: triangle)
                (mkvec3 (vec3.dot n s)
                        (vec3.dot m e2)
                        (-(vec3.dot m e1)))
-  in if u < 0 || v < 0 || u + v > 1 || !(in_bounds bn t)
+  in if u < 0 || v < 0 || u + v > 1 || !(in_bounds t tmax)
      then #nothing
      else let pos = point_at_param ra t
           let normal = vec3.normalise n
           in #just { t, pos, normal, mat = unsafe mats[i32.u32 tr.mat_ix] }
 
-let hit_sphere (bn: bounds) (r: ray) (s: sphere)
+let hit_sphere (tmax: f32) (r: ray) (s: sphere)
              : maybe hit =
   let oc = r.origin vec3.- s.center
   let a = 1 -- vec3.dot r.dir r.dir
@@ -45,16 +45,16 @@ let hit_sphere (bn: bounds) (r: ray) (s: sphere)
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
     in #just { t, pos, normal, mat = s.mat }
   in if discriminant > 0
-     then if in_bounds bn root0 then handle_root root0
-          else if in_bounds bn root1 then handle_root root1
+     then if in_bounds root0 tmax then handle_root root0
+          else if in_bounds root1 tmax then handle_root root1
           else #nothing
      else #nothing
 
-let hit_geom (bn: bounds) (r: ray) (ms: []material) (g: geom)
+let hit_geom (tmax: f32) (r: ray) (ms: []material) (g: geom)
            : maybe hit =
   match g
-  case #sphere s -> hit_sphere bn r s
-  case #triangle t -> hit_triangle bn r t ms
+  case #sphere s -> hit_sphere tmax r s
+  case #triangle t -> hit_triangle tmax r t ms
 
 let aabb_min_corner (b: aabb): vec3 =
   b.center vec3.- b.half_dims
@@ -91,7 +91,7 @@ let bounding_box_geom (g: geom): aabb =
 
 -- TODO: Also look at
 -- http://www.pbr-book.org/3ed-2018/Shapes/Basic_Shape_Interface.html#Bounds3::IntersectP
-let hit_aabb ({tmin, tmax}: bounds) ({origin, dir}: ray) (b: aabb)
+let hit_aabb (tmax: f32) ({origin, dir}: ray) (b: aabb)
            : bool =
   let eps = 0.001
   let iter min' max' origin' dir' tmin tmax =
@@ -105,7 +105,7 @@ let hit_aabb ({tmin, tmax}: bounds) ({origin, dir}: ray) (b: aabb)
     in (tmin, tmax)
   let (min, max) = (aabb_min_corner b, aabb_max_corner b)
   let (tmin, tmax) =
-    iter min.x max.x origin.x dir.x tmin tmax
+    iter min.x max.x origin.x dir.x 0 tmax
   in if tmax <= tmin then false
      else let (tmin, tmax) =
             iter min.y max.y origin.y dir.y tmin tmax

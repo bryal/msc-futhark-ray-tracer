@@ -35,8 +35,6 @@ type sphere = { center: vec3, radius: f32, mat: material }
 type geom = #sphere sphere | #triangle triangle
 type~ group = []geom
 
-type bounds = { tmin: f32, tmax: f32 }
-
 let mkvec3 x y z: vec3 = { x, y, z }
 
 let mkvec2 x y: vec2 = { x, y }

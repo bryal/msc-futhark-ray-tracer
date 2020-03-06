@@ -29,9 +29,8 @@ let advance_rng (rng: rnge): rnge =
 
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
-  let bounds = { tmin = 0.0, tmax = f32.highest }
+  let tmax = f32.highest
   let sky = mkvec3 0.8 0.9 1.0
-  -- let sky = mkvec3 0 0 0
   -- TODO: Use russian roulette termination. See PBR Book 13.7.
   --       Current method is not quite physically correct, just
   --       unlikely to produce a bad result.
@@ -39,7 +38,7 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
     loop (throughput, light_source, r, rng, bounces) =
          (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 12u32)
     while bounces > 0 && vec3.norm throughput > 0.01
-    do match xbvh.hit_bvh bounds r mats world
+    do match xbvh.hit_bvh tmax r mats world
        case #just hit' ->
          if vec3.norm hit'.mat.emission > 0
          then (throughput, hit'.mat.emission, r, rng, 0)

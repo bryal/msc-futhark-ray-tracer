@@ -7,7 +7,7 @@ module type bvh = {
 
   val build_bvh [n]: [n]geom -> bvh
 
-  val hit_bvh [m]: bounds -> ray -> [m]material -> bvh -> maybe hit
+  val hit_bvh [m]: f32 -> ray -> [m]material -> bvh -> maybe hit
 }
 
 module fake_bvh: bvh = {
@@ -101,28 +101,28 @@ module lbvh: bvh = {
             do map (update I) I
     in { bounds, leaves = xs, nodes = I }
 
-  let hit_bvh (bn: bounds) (r: ray) (ms: []material) (t: bvh)
+  let hit_bvh (tmax: f32) (r: ray) (ms: []material) (t: bvh)
             : maybe hit =
     let (closest, _, _, _) =
-      loop (closest, bn, current, prev) = (-1, bn, 0, #internal (-1))
+      loop (closest, tmax, current, prev) = (-1, tmax, 0, #internal (-1))
       while current != -1
       do let node = unsafe t.nodes[current]
          let rec_child: maybe ptr =
            if prev == node.left
            then #just node.right
-           else if prev != node.right && hit_aabb bn r node.aabb
+           else if prev != node.right && hit_aabb tmax r node.aabb
            then #just node.left
            else #nothing
          in match rec_child
-            case #nothing -> (closest, bn, node.parent, #internal current)
+            case #nothing -> (closest, tmax, node.parent, #internal current)
             case #just ptr ->
               match ptr
-              case #internal i -> (closest, bn, i, #internal current)
+              case #internal i -> (closest, tmax, i, #internal current)
               case #leaf i ->
-                match hit_geom bn r ms (unsafe t.leaves[i])
-                case #just hit -> (i, bn with tmax = hit.t, current, ptr)
-                case #nothing -> (closest, bn, current, ptr)
+                match hit_geom tmax r ms (unsafe t.leaves[i])
+                case #just hit -> (i, hit.t, current, ptr)
+                case #nothing -> (closest, tmax, current, ptr)
     in if closest >= 0
-       then hit_geom bn r ms (unsafe t.leaves[closest])
+       then hit_geom tmax r ms (unsafe t.leaves[closest])
        else #nothing
 }
