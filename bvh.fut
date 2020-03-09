@@ -5,17 +5,18 @@ import "lib/github.com/diku-dk/sorts/radix_sort"
 module type bvh = {
   type~ bvh
 
-  val build_bvh [n]: [n]geom -> bvh
+  val build [n]: [n]geom -> bvh
 
-  val hit_bvh [m]: f32 -> ray -> [m]material -> bvh -> maybe hit
+  -- For recursive ray-tracing / indirect illumination
+  val closest_hit [m]: f32 -> ray -> [m]material -> bvh -> maybe hit
 }
 
 module fake_bvh: bvh = {
   type~ bvh = []geom
 
-  let build_bvh = id
+  let build = id
 
-  let hit_bvh bn r mats xs =
+  let closest_hit tmax r mats xs =
     let select_min_hit a b =
       match (a, b)
       case (#nothing, _) -> b
@@ -64,7 +65,7 @@ module lbvh: bvh = {
     , leaves: []geom
     , nodes: []node }
 
-  let build_bvh [n] (xs: [n]geom): bvh =
+  let build [n] (xs: [n]geom): bvh =
     let aabbs = map bounding_box_geom xs
     let neutral_aabb = { center = mkvec3 0 0 0
                        , half_dims = mkvec3_repeat (-f32.inf) }
@@ -101,7 +102,7 @@ module lbvh: bvh = {
             do map (update I) I
     in { bounds, leaves = xs, nodes = I }
 
-  let hit_bvh (tmax: f32) (r: ray) (ms: []material) (t: bvh)
+  let closest_hit (tmax: f32) (r: ray) (ms: []material) (t: bvh)
             : maybe hit =
     let (closest, _, _, _) =
       loop (closest, tmax, current, prev) = (-1, tmax, 0, #internal (-1))

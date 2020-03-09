@@ -38,7 +38,7 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
     loop (throughput, light_source, r, rng, bounces) =
          (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 12u32)
     while bounces > 0 && vec3.norm throughput > 0.01
-    do match xbvh.hit_bvh tmax r mats world
+    do match xbvh.closest_hit tmax r mats world
        case #just hit' ->
          if vec3.norm hit'.mat.emission > 0
          then (throughput, hit'.mat.emission, r, rng, 0)
@@ -107,7 +107,7 @@ let sample (world: xbvh.bvh)
   in color r world mats rng
 
 let sample_all (s: state): (rnge, [][]vec3) =
-  let world_bvh = xbvh.build_bvh s.world
+  let world_bvh = xbvh.build s.world
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
