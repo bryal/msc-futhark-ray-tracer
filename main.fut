@@ -19,7 +19,7 @@ type~ state = { time: f32
               , mode: bool
               , cam: camera
               , mats: []material
-              , world: []geom }
+              , world: []obj }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -141,13 +141,13 @@ let sample_accum (s: state): (rnge, [][]vec3) =
 
 let parse_triangles [t]
                     (tris: [t][3][3]f32) (tri_mats: [t]u32)
-                  : [t]geom =
+                  : [t]obj =
   let f tri (mat_ix: u32) =
     let tri' = (map vec3_from_array tri)
-    in #triangle { a = tri'[0]
-                 , b = tri'[1]
-                 , c = tri'[2]
-                 , mat_ix }
+    in { geom = #triangle { a = tri'[0]
+                          , b = tri'[1]
+                          , c = tri'[2] }
+       , mat_ix }
   in map2 f tris tri_mats
 
 let parse_mat (m: [10]f32): material =

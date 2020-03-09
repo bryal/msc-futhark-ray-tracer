@@ -5,14 +5,14 @@ import "lib/github.com/diku-dk/sorts/radix_sort"
 module type bvh = {
   type~ bvh
 
-  val build [n]: [n]geom -> bvh
+  val build [n]: [n]obj -> bvh
 
   -- For recursive ray-tracing / indirect illumination
   val closest_hit [m]: f32 -> ray -> [m]material -> bvh -> maybe hit
 }
 
 module fake_bvh: bvh = {
-  type~ bvh = []geom
+  type~ bvh = []obj
 
   let build = id
 
@@ -22,7 +22,7 @@ module fake_bvh: bvh = {
       case (#nothing, _) -> b
       case (_, #nothing) -> a
       case (#just a', #just b') -> if a'.t < b'.t then a else b
-    in reduce select_min_hit #nothing (map (hit_geom bn r mats) xs)
+    in reduce select_min_hit #nothing (map (hit_obj tmax r mats) xs)
 }
 
 let morton_n_bits: u32 = 30
@@ -62,11 +62,11 @@ module lbvh: bvh = {
     -- The tree has its own unit-cube space. Everything must be
     -- transformed into it.
     { bounds: aabb
-    , leaves: []geom
+    , leaves: []obj
     , nodes: []node }
 
-  let build [n] (xs: [n]geom): bvh =
-    let aabbs = map bounding_box_geom xs
+  let build [n] (xs: [n]obj): bvh =
+    let aabbs = map bounding_box_obj xs
     let neutral_aabb = { center = mkvec3 0 0 0
                        , half_dims = mkvec3_repeat (-f32.inf) }
     let bounds = reduce_comm containing_aabb neutral_aabb aabbs
@@ -120,10 +120,10 @@ module lbvh: bvh = {
               match ptr
               case #internal i -> (closest, tmax, i, #internal current)
               case #leaf i ->
-                match hit_geom tmax r ms (unsafe t.leaves[i])
+                match hit_obj tmax r ms (unsafe t.leaves[i])
                 case #just hit -> (i, hit.t, current, ptr)
                 case #nothing -> (closest, tmax, current, ptr)
     in if closest >= 0
-       then hit_geom tmax r ms (unsafe t.leaves[closest])
+       then hit_obj tmax r ms (unsafe t.leaves[closest])
        else #nothing
 }

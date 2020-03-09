@@ -1,8 +1,20 @@
 import "common"
 
-type triangle = { a: vec3, b: vec3, c: vec3, mat_ix: u32 }
-type sphere = { center: vec3, radius: f32, mat: material }
+type triangle = { a: vec3, b: vec3, c: vec3 }
+
+type sphere = { center: vec3, radius: f32 }
+
 type geom = #sphere sphere | #triangle triangle
+
+type obj = { geom: geom, mat_ix: u32 }
+
+let mkrect (corners: [4]vec3): [2]geom =
+  [ #triangle { a = corners[0]
+              , b = corners[1]
+              , c = corners[2] }
+  , #triangle { a = corners[2]
+              , b = corners[3]
+              , c = corners[0] } ]
 
 -- TODO: Benchmark if it's faster to represent an aabb as a pair of
 -- (top-forward-rightmost corner, bot-backward-leftmost corner).
@@ -12,9 +24,10 @@ type aabb = { center: vec3, half_dims: vec3  }
 
 let in_bounds (t: f32) (tmax: f32): bool = t < tmax && t > 0
 
+type hit' = { t: f32, pos: vec3, normal: vec3 }
+
 let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
-                 (mats: []material)
-               : maybe hit =
+               : maybe hit' =
   -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
   let eps = 0.00001
   let e1 = tr.b vec3.- tr.a
@@ -33,10 +46,10 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
      then #nothing
      else let pos = point_at_param ra t
           let normal = vec3.normalise n
-          in #just { t, pos, normal, mat = unsafe mats[i32.u32 tr.mat_ix] }
+          in #just { t, pos, normal }
 
 let hit_sphere (tmax: f32) (r: ray) (s: sphere)
-             : maybe hit =
+             : maybe hit' =
   let oc = r.origin vec3.- s.center
   let a = 1 -- vec3.dot r.dir r.dir
   let b = 2 * vec3.dot oc r.dir
@@ -47,18 +60,25 @@ let hit_sphere (tmax: f32) (r: ray) (s: sphere)
   let handle_root t =
     let pos = point_at_param r t
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
-    in #just { t, pos, normal, mat = s.mat }
+    in #just { t, pos, normal }
   in if discriminant > 0
      then if in_bounds root0 tmax then handle_root root0
           else if in_bounds root1 tmax then handle_root root1
           else #nothing
      else #nothing
 
-let hit_geom (tmax: f32) (r: ray) (ms: []material) (g: geom)
-           : maybe hit =
+let hit_geom (tmax: f32) (r: ray) (g: geom): maybe hit' =
   match g
   case #sphere s -> hit_sphere tmax r s
-  case #triangle t -> hit_triangle tmax r t ms
+  case #triangle t -> hit_triangle tmax r t
+
+let add_mat (mat: material) (h: hit'): hit =
+  { t = h.t, pos = h.pos, normal = h.normal, mat }
+
+let hit_obj (tmax: f32) (r: ray) (ms: []material) (obj: obj)
+           : maybe hit =
+  map_maybe (add_mat (unsafe ms[i32.u32 obj.mat_ix]))
+            (hit_geom tmax r obj.geom)
 
 let aabb_min_corner (b: aabb): vec3 =
   b.center vec3.- b.half_dims
@@ -88,8 +108,8 @@ let bounding_box_triangle (t: triangle): aabb =
   let c = bounding_box_point t.c
   in containing_aabb a (containing_aabb b c)
 
-let bounding_box_geom (g: geom): aabb =
-  match g
+let bounding_box_obj (obj: obj): aabb =
+  match obj.geom
   case #sphere s -> bounding_box_sphere s
   case #triangle t -> bounding_box_triangle t
 
