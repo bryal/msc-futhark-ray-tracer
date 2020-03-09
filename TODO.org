@@ -3,15 +3,24 @@
   better quality for use with static scenes.
 * TODO Document how we follow & deviate from tutorials
 
-* TODO More physically based model
-** BRDF, PDF, & Importance sampling
-   I.e. physically accurate sampling distributions.
-
-* NEXT Improve metal material
+* INACTIVE Improve metal material
   Consider complex fresnel coefficients.
-* NEXT LIDAR
+* TODO LIDAR
+** TODO Handle direct lighting
+   Probability of hitting laser transmitter is probably way
+   small. Special handling of direct lighting using shadow rays will
+   probably be necessary.
 
-* NEXT Generalize
+* TODO Generalize
+** Paramters
+   What are they?
+
+   - Wavelength :: Self explanatory?
+   - Self-emission :: Laser transmitter for lidar, camera flash for
+                      camera with flash, off for camera without
+                      flash.
+   - Flash vs. scanning lidar
+   - ??
 
 * NEXT Quasi-Monte Carlo (Sobol)
   Try using quasi-Monte Carlo integration instead of what we currently
