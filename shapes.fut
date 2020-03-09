@@ -1,5 +1,9 @@
 import "common"
 
+type triangle = { a: vec3, b: vec3, c: vec3, mat_ix: u32 }
+type sphere = { center: vec3, radius: f32, mat: material }
+type geom = #sphere sphere | #triangle triangle
+
 -- TODO: Benchmark if it's faster to represent an aabb as a pair of
 -- (top-forward-rightmost corner, bot-backward-leftmost corner).
 --

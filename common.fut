@@ -30,11 +30,6 @@ type ray = { origin: vec3, dir: vec3 }
 
 type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
-type triangle = { a: vec3, b: vec3, c: vec3, mat_ix: u32 }
-type sphere = { center: vec3, radius: f32, mat: material }
-type geom = #sphere sphere | #triangle triangle
-type~ group = []geom
-
 let mkvec3 x y z: vec3 = { x, y, z }
 
 let mkvec2 x y: vec2 = { x, y }
