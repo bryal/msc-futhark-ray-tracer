@@ -9,6 +9,20 @@ module xbvh = lbvh
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
 
+type light = { geom: geom, emission: vec3 }
+
+let closest_light_hit (r: ray) (ls: []light)
+                    : maybe { t: f32, light: light } =
+  let select_min_hit a b =
+    match (a, b)
+    case (#nothing, _) -> b
+    case (_, #nothing) -> a
+    case (#just a', #just b') -> if a'.t < b'.t then a else b
+  let hit_light r light =
+    map_maybe (\h -> { t = h.t, light })
+              (hit_geom f32.highest r light.geom)
+  in reduce select_min_hit #nothing (map (hit_light r) ls)
+
 type~ state = { time: f32
               , dimensions: (u32, u32)
               , subsampling: u32
@@ -19,7 +33,8 @@ type~ state = { time: f32
               , mode: bool
               , cam: camera
               , mats: []material
-              , world: []obj }
+              , world: []obj
+              , lights: []light }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -27,44 +42,92 @@ let vcol_to_argb (c: vec3): argb.colour =
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
-let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
+let bounced_ray (h: hit) (wi: vec3): ray =
+  let face_forward_normal = if vec3.dot wi h.normal >= 0
+                            then h.normal
+                            else vec3_neg h.normal
+  -- Fix surface acne. Notice that we move along the normal (facing
+  -- to the same side as `wi`) instead of along `wi` directly. This
+  -- is because at angles very close to the surface, wi of length
+  -- epsilon may simply not offset us enough to get above the
+  -- surface.
+  let eps = 0.001
+  let acne_offset = vec3.scale eps face_forward_normal
+  in mkray (h.pos vec3.+ acne_offset) wi
+
+-- Direct radiance for all light sources through a path junction
+--
+-- PBR Book 14.3
+let direct_radiance (wo: vec3)
+                    (h: hit)
+                    (lights: []light)
+                    (world: xbvh.bvh)
+                  : vec3 =
+  -- TODO: Should probably have a special case for materials with
+  --       perfectly specular reflection/refraction. 14.4.5
+  --
+  -- TODO: Multiple importance sampling. Better for more specular
+  --       surfaces. Would probably also solve the other TODO right
+  --       above. PBR Book 14.3.
+  let direct_radiance' l = -- Radiance for one light
+    let (point, pdf) = sample_light l
+    let wi = point vec3.- h.pos
+    let r = bounced_ray h wi
+    let occluded = xbvh.any_hit f32.highest r world
+    in if occluded then mkvec3 0 0 0 else _
+  in reduce_comm (vec3.+) (mkvec3 0 0 0) (map direct_radiance' lights)
+
+let color (r: ray)
+          (world: xbvh.bvh)
+          (lights: []light)
+          (mats: []material)
+          (rng: rnge)
         : vec3 =
   let tmax = f32.highest
   let sky = mkvec3 0.8 0.9 1.0
+  -- let sky = mkvec3 0 0 0
+  let closest_hit (r: ray): #obj hit | #light light | #neither =
+    match (xbvh.closest_hit tmax r mats world, closest_light_hit r lights)
+    case (#just o, #just l) -> if o.t < l.t then #obj o else #light l.light
+    case (#nothing, #just l) -> #light l.light
+    case (#just o, #nothing) -> #obj o
+    case (#nothing, #nothing) -> #neither
+  let finish radiance =
+    let choked_throughput = mkvec3 0 0 0
+    let arbitrary_ray = r
+    in (choked_throughput, radiance, arbitrary_ray)
   -- TODO: Use russian roulette termination. See PBR Book 13.7.
   --       Current method is not quite physically correct, just
   --       unlikely to produce a bad result.
-  let (throughput, light_source, _, _, _) =
-    loop (throughput, light_source, r, rng, bounces) =
-         (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 12u32)
-    while bounces > 0 && vec3.norm throughput > 0.01
-    do match xbvh.closest_hit tmax r mats world
-       case #just hit' ->
-         if vec3.norm hit'.mat.emission > 0
-         then (throughput, hit'.mat.emission, r, rng, 0)
-         else
-           let wo = vec3.scale (-1) r.dir
-           let { wi, bsdf, pdf } = sample_dir wo hit' rng
-           let rng = advance_rng rng
-           let face_forward_normal = if vec3.dot wi hit'.normal >= 0
-                                     then hit'.normal
-                                     else vec3_neg hit'.normal
-           let cosFalloff = vec3.dot face_forward_normal wi
-           let throughput =
-             throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
-           let eps = 0.001
-           -- Fix surface acne
-           --
-           -- NOTE: Don't just walk along `wi`, because then we get
-           -- strange artifacts for some materials at extreme angles.
-           let acne_offset = vec3.scale eps face_forward_normal
-           let r = mkray (hit'.pos vec3.+ acne_offset) wi
-           in if pdf == 0
-              then (mkvec3 0 0 0, light_source, r, rng, 0)
-              else (throughput, light_source, r, rng, bounces - 1)
-       case #nothing ->
-         (throughput, sky, r, rng, 0)
-  in throughput vec3.* light_source
+  in (.1) <|
+     loop (throughput, radiance, r, rng, bounces) =
+          (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 0)
+     while bounces < 12u32 && vec3.norm throughput > 0.001
+     do let (throughput, radiance, r) =
+          match closest_hit r
+          case #obj h ->
+            let wo = vec3_neg r.dir
+            let radiance =
+              throughput vec3.* (h.mat.emission
+                                 vec3.+ direct_radiance wo h lights world)
+              vec3.+ radiance
+            let { wi, bsdf, pdf } = sample_dir wo h rng
+            let cosFalloff = f32.abs (vec3.dot h.normal wi)
+            let throughput =
+              throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
+            in if pdf == 0
+               then finish (mkvec3 0 0 0)
+               else (throughput, radiance, bounced_ray h wi)
+          -- If we hit a light before bouncing, draw it so it's
+          -- visible.  Otherwise, it will contribute via direct
+          -- illumination, and we'll treat an indirect hit as an
+          -- absolute absorber, so it won't contribute the same
+          -- illumination more than once.
+          case #light l -> if bounces == 0
+            then finish (l.emission vec3.+ radiance)
+            else finish radiance
+          case #neither -> finish (throughput vec3.* sky vec3.+ radiance)
+        in (throughput, radiance, r, advance_rng rng, bounces + 1)
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
@@ -92,6 +155,7 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.- origin)
 
 let sample (world: xbvh.bvh)
+           (lights: []light)
            (cam: camera)
            (mats: []material)
            (w: f32, h: f32)
@@ -104,7 +168,7 @@ let sample (world: xbvh.bvh)
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let r = get_ray cam ratio xy rng
-  in color r world mats rng
+  in color r world lights mats rng
 
 let sample_all (s: state): (rnge, [][]vec3) =
   let world_bvh = xbvh.build s.world
@@ -120,6 +184,7 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
     in (vec3./) (sample world_bvh
+                        s.lights
                         s.cam
                         s.mats
                         (f32.u32 w, f32.u32 h)
@@ -193,7 +258,12 @@ module lys: lys with text_content = text_content = {
             , origin = mkvec3 0 0.8 1.8
             , aperture = 0.0, focal_dist = 1.5 }
     , mats = parse_mats mat_data
-    , world = parse_triangles tri_geoms tri_mats }
+    , world = parse_triangles tri_geoms tri_mats
+    , lights = map (\geom -> { geom, emission = mkvec3 10 10 10 })
+                   (mkrect [ mkvec3  0.2300 1.5800 (-0.2200)
+                           , mkvec3  0.2300 1.5800 0.1600
+                           , mkvec3  (-0.2400) 1.5800 0.1600
+                           , mkvec3  (-0.2400) 1.5800 (-0.2200) ]) }
 
   let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false

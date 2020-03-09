@@ -9,6 +9,10 @@ module type bvh = {
 
   -- For recursive ray-tracing / indirect illumination
   val closest_hit [m]: f32 -> ray -> [m]material -> bvh -> maybe hit
+
+  -- For shadow rays / direct illumination. When only care about
+  -- whether we hit *anything* before reaching the light source.
+  val any_hit [m]: f32 -> ray -> bvh -> bool
 }
 
 module fake_bvh: bvh = {
@@ -23,6 +27,9 @@ module fake_bvh: bvh = {
       case (_, #nothing) -> a
       case (#just a', #just b') -> if a'.t < b'.t then a else b
     in reduce select_min_hit #nothing (map (hit_obj tmax r mats) xs)
+
+  let any_hit tmax r xs =
+    any (is_just <-< hit_geom tmax r) xs
 }
 
 let morton_n_bits: u32 = 30
@@ -126,4 +133,27 @@ module lbvh: bvh = {
     in if closest >= 0
        then hit_obj tmax r ms (unsafe t.leaves[closest])
        else #nothing
+
+  -- TODO: Can probably be made faster. Just a basic improved version
+  --       of closest_hit atm.
+  let any_hit tmax r t =
+    (.0) <|
+      loop (hit, current, prev) = (false, 0, #internal (-1))
+      while !hit && current != -1
+      do let node = unsafe t.nodes[current]
+         let rec_child: maybe ptr =
+           if prev == node.left
+           then #just node.right
+           else if prev != node.right && hit_aabb tmax r node.aabb
+           then #just node.left
+           else #nothing
+         in match rec_child
+            case #nothing -> (false, node.parent, #internal current)
+            case #just ptr ->
+              match ptr
+              case #internal i -> (false, i, #internal current)
+              case #leaf i ->
+                match hit_geom tmax r (unsafe t.leaves[i])
+                case #just _ -> (true, current, ptr)
+                case #nothing -> (false, current, ptr)
 }
