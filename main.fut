@@ -46,30 +46,33 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
     let choked_throughput = mkvec3 0 0 0
-    let arbitrary_ray = r
-    in (radiance, choked_throughput, arbitrary_ray)
-  -- TODO: Use russian roulette termination. See PBR Book 13.7.
-  --       Current method is not quite physically correct, just
-  --       unlikely to produce a bad result.
+    let (arbitrary_ray, arbitrary_rng) = (r, rng)
+    in (radiance, choked_throughput, arbitrary_ray, arbitrary_rng)
+  -- Russian roulette termination. Instead of absolutely cutting off
+  -- the "recursion" after N bounces, keep going with some probability
+  -- and weight the samples appropriately. When we do it like this,
+  -- the final result is an unbiased estimate of the sum. See PBR Book
+  -- 14.5.1.
+  let p_termination = 0.1
+  let roulette_terminate rng = (random_unit_exclusive rng).1 < p_termination
   in (.0) <|
-     loop (radiance, throughput, r, rng, bounces) =
-          (mkvec3 0 0 0, mkvec3 1 1 1, r, rng, 0)
-     while bounces < 12u32 && vec3.norm throughput > 0.01
-     do let (radiance, throughput, r) =
-          match xbvh.closest_hit tmax r mats world
-          case #just h ->
-            let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
-            let wo = vec3_neg r.dir
-            let { wi, bsdf, pdf } = sample_dir wo h rng
-            let cosFalloff = f32.abs (vec3.dot h.normal wi)
-            let throughput =
-              throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
-            let r = mkray_adjust_acne h wi
-            in if pdf == 0
-               then finish (mkvec3 0 0 0)
-               else (radiance, throughput, r)
-          case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
-        in (radiance, throughput, r, advance_rng rng, bounces + 1)
+     loop (radiance, throughput, r, rng) =
+          (mkvec3 0 0 0, mkvec3 1 1 1, r, rng)
+     while vec3.norm throughput > 0.001 && !(roulette_terminate rng)
+     do let throughput = vec3.scale (1 / (1 - p_termination)) throughput
+        in match xbvh.closest_hit tmax r mats world
+           case #just h ->
+             let rng = advance_rng rng
+             let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
+             let wo = vec3_neg r.dir
+             let { wi, bsdf, pdf } = sample_dir wo h rng
+             let cosFalloff = f32.abs (vec3.dot h.normal wi)
+             let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
+             let r = mkray_adjust_acne h wi
+             in if pdf == 0
+                then finish (mkvec3 0 0 0)
+                else (radiance, throughput, r, advance_rng rng)
+           case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
