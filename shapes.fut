@@ -108,10 +108,12 @@ let bounding_box_triangle (t: triangle): aabb =
   let c = bounding_box_point t.c
   in containing_aabb a (containing_aabb b c)
 
-let bounding_box_obj (obj: obj): aabb =
-  match obj.geom
+let bounding_box_geom (g: geom): aabb =
+  match g
   case #sphere s -> bounding_box_sphere s
   case #triangle t -> bounding_box_triangle t
+
+let bounding_box_obj: obj -> aabb = bounding_box_geom <-< (.geom)
 
 -- TODO: Also look at
 -- http://www.pbr-book.org/3ed-2018/Shapes/Basic_Shape_Interface.html#Bounds3::IntersectP
