@@ -72,12 +72,12 @@ let diffuse_bsdf (color: vec3): vec3 =
 -- TODO: Consider Oren-Nayar model instead of Lambertian
 --
 -- Diffuse reflection according to Lambertian model
-let diffuse_sample_dir (m: material) (rng: rnge): dir_sample =
-  let (_, wi) = cosine_sample_hemisphere rng
+let diffuse_sample_dir (m: material) (rng: rnge): (rnge, dir_sample) =
+  let (rng, wi) = cosine_sample_hemisphere rng
   -- TODO: Can / when do we get wi in the wrong hemisphere? Float
   --       error? Consider returning pdf and/or bsdf = 0 when that is
   --       the case.
-  in { wi, bsdf = diffuse_bsdf m.color, pdf = cos_theta wi * inv_pi }
+  in (rng, { wi, bsdf = diffuse_bsdf m.color, pdf = cos_theta wi * inv_pi })
 
 -- PBR Book 8.2.3
 let refract (wi: vec3) (n: vec3) (eta: f32)
@@ -114,11 +114,11 @@ let transmission_sample_dir (wo: vec3) (m: material)
        , pdf = 1 }
 
 let dielectric_refraction_sample_dir (wo: vec3) (m: material) (rng: rnge)
-                                   : dir_sample =
+                                   : (rnge, dir_sample) =
   let (rng, p) = random_unit_exclusive rng
   in if p < m.opacity
      then diffuse_sample_dir m rng
-     else transmission_sample_dir wo m
+     else (rng, transmission_sample_dir wo m)
 
 -- TODO: Handle when we come from the inside, exiting. Like through
 --       glass.
@@ -212,10 +212,10 @@ let spherical_direction (sin_theta: f32) (cos_theta: f32) (phi: f32): vec3 =
 -- Note that we're only doing an isotropic distribution, so alphax ==
 -- alphay, which implies that alpha = alphax = alphay.
 let dielectric_reflection_sample_wh (wo: vec3) (m: material) (rng: rnge)
-                                  : (vec3, f32) =
-  let (_rng, (u0, u1)) = random_in_unit_square rng
+                                  : (rnge, vec3, f32) =
+  let (rng, (u0, u1)) = random_in_unit_square rng
   let log_sample = f32.log (1 - u0)
-  in if f32.isinf log_sample then (mkvec3 0 0 0, 0) else
+  in if f32.isinf log_sample then (rng, mkvec3 0 0 0, 0) else
   let alpha = beckmann_alpha m.roughness
   let tan2_theta = -alpha * alpha * log_sample
   let phi = u1 * 2 * f32.pi
@@ -224,25 +224,26 @@ let dielectric_reflection_sample_wh (wo: vec3) (m: material) (rng: rnge)
   let wh = spherical_direction sin_theta cos_theta phi
   let wh = if same_hemisphere wo wh then wh else (vec3_neg wh)
   let pdf_wh = microfacet_distribution alpha wh * f32.abs cos_theta
-  in (wh, pdf_wh)
+  in (rng, wh, pdf_wh)
 
 -- PBR Book 14.1.1
 let dielectric_reflection_sample_dir (wo: vec3) (m: material) (rng: rnge)
-                                   : dir_sample =
-  let (wh, pdf_wh) = dielectric_reflection_sample_wh wo m rng
+                                   : (rnge, dir_sample) =
+  let (rng, wh, pdf_wh) = dielectric_reflection_sample_wh wo m rng
   let wi = reflect wo wh
   in if !(same_hemisphere wo wi)
-     then null_sample
-     else { wi
-          , bsdf = dielectric_reflection_bsdf wo wi m
-          , pdf = pdf_wh / (4 * vec3.dot wo wh) }
+     then (rng, null_sample)
+     else ( rng
+          , { wi
+            , bsdf = dielectric_reflection_bsdf wo wi m
+            , pdf = pdf_wh / (4 * vec3.dot wo wh) } )
 
 -- NOTE: May not respect conservation of energy properly, as we're
 --       just adapting Torrance-Sparrow to a fresnel-blend material
 --       intuitively. PBR book 8.5 talks more about this. Look at the
 --       Ashikhmin and Shirley model.
 let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
-                        : dir_sample =
+                        : (rnge, dir_sample) =
   if cos_theta wo <= 0 -- Coming from the inside
   then dielectric_refraction_sample_dir wo m rng
   else let r = fresnel_reflectance wo m
@@ -252,14 +253,14 @@ let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
           else dielectric_refraction_sample_dir wo m rng
 
 let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
-                   : dir_sample =
-  let sample = dielectric_reflection_sample_dir wo m rng
-  in sample with bsdf = sample.bsdf vec3.* m.color
+                   : (rnge, dir_sample) =
+  let (rng, sample) = dielectric_reflection_sample_dir wo m rng
+  in (rng, sample with bsdf = sample.bsdf vec3.* m.color)
 
 -- Sample a direction accodring to a distribution that is similar to
 -- the material's corresponding BSDF distribution.
 let uber_sample_dir (wo: vec3) (m: material) (rng: rnge)
-                  : dir_sample =
+                  : (rnge, dir_sample) =
   let (rng, p) = random_unit_exclusive rng
   in if p < m.metalness
      then metal_sample_dir wo m rng
@@ -289,8 +290,8 @@ let local_to_world (onb: orthonormal_basis) (w: vec3): vec3 =
 -- To make some calculations simpler, compute all
 -- reflection/refraction vectors in a local space where the normal is
 -- simply (0, 0, 1).
-let sample_dir (wo: vec3) (h: hit) (rng: rnge): dir_sample =
+let sample_dir (wo: vec3) (h: hit) (rng: rnge): (rnge, dir_sample) =
   let onb = mk_orthonormal_basis h.normal
   let wo' = world_to_local onb wo
-  let s = uber_sample_dir wo' h.mat rng
-  in s with wi = local_to_world onb s.wi
+  let (rng, s) = uber_sample_dir wo' h.mat rng
+  in (rng, s with wi = local_to_world onb s.wi)

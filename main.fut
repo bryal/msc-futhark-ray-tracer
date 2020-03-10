@@ -65,13 +65,13 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
              let rng = advance_rng rng
              let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
              let wo = vec3_neg r.dir
-             let { wi, bsdf, pdf } = sample_dir wo h rng
+             let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
              let cosFalloff = f32.abs (vec3.dot h.normal wi)
              let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
              let r = mkray_adjust_acne h wi
              in if pdf == 0
                 then finish (mkvec3 0 0 0)
-                else (radiance, throughput, r, advance_rng rng)
+                else (radiance, throughput, r, rng)
            case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
