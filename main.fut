@@ -27,44 +27,49 @@ let vcol_to_argb (c: vec3): argb.colour =
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
+let mkray_adjust_acne (h: hit) (wi: vec3): ray =
+  -- Fix surface acne
+  --
+  -- NOTE: Don't just walk along `wi`, because then we get
+  -- strange artifacts for some materials at extreme angles.
+  let eps = 0.001
+  let face_forward_normal = if vec3.dot wi h.normal >= 0
+                            then h.normal
+                            else vec3_neg h.normal
+  let acne_offset = vec3.scale eps face_forward_normal
+  in mkray (h.pos vec3.+ acne_offset) wi
+
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let tmax = f32.highest
   let sky = mkvec3 0.8 0.9 1.0
+  -- Choke throughput to end the loop, returning the radiance
+  let finish radiance =
+    let choked_throughput = mkvec3 0 0 0
+    let arbitrary_ray = r
+    in (radiance, choked_throughput, arbitrary_ray)
   -- TODO: Use russian roulette termination. See PBR Book 13.7.
   --       Current method is not quite physically correct, just
   --       unlikely to produce a bad result.
-  let (throughput, light_source, _, _, _) =
-    loop (throughput, light_source, r, rng, bounces) =
-         (mkvec3 1 1 1, mkvec3 0 0 0, r, rng, 12u32)
-    while bounces > 0 && vec3.norm throughput > 0.01
-    do match xbvh.closest_hit tmax r mats world
-       case #just hit' ->
-         if vec3.norm hit'.mat.emission > 0
-         then (throughput, hit'.mat.emission, r, rng, 0)
-         else
-           let wo = vec3.scale (-1) r.dir
-           let { wi, bsdf, pdf } = sample_dir wo hit' rng
-           let rng = advance_rng rng
-           let face_forward_normal = if vec3.dot wi hit'.normal >= 0
-                                     then hit'.normal
-                                     else vec3_neg hit'.normal
-           let cosFalloff = vec3.dot face_forward_normal wi
-           let throughput =
-             throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
-           let eps = 0.001
-           -- Fix surface acne
-           --
-           -- NOTE: Don't just walk along `wi`, because then we get
-           -- strange artifacts for some materials at extreme angles.
-           let acne_offset = vec3.scale eps face_forward_normal
-           let r = mkray (hit'.pos vec3.+ acne_offset) wi
-           in if pdf == 0
-              then (mkvec3 0 0 0, light_source, r, rng, 0)
-              else (throughput, light_source, r, rng, bounces - 1)
-       case #nothing ->
-         (throughput, sky, r, rng, 0)
-  in throughput vec3.* light_source
+  in (.0) <|
+     loop (radiance, throughput, r, rng, bounces) =
+          (mkvec3 0 0 0, mkvec3 1 1 1, r, rng, 0)
+     while bounces < 12u32 && vec3.norm throughput > 0.01
+     do let (radiance, throughput, r) =
+          match xbvh.closest_hit tmax r mats world
+          case #just h ->
+            let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
+            let wo = vec3_neg r.dir
+            let { wi, bsdf, pdf } = sample_dir wo h rng
+            let cosFalloff = f32.abs (vec3.dot h.normal wi)
+            let throughput =
+              throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
+            let r = mkray_adjust_acne h wi
+            in if pdf == 0
+               then finish (mkvec3 0 0 0)
+               else (radiance, throughput, r)
+          case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
+        in (radiance, throughput, r, advance_rng rng, bounces + 1)
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
