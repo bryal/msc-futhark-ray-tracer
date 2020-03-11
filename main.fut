@@ -3,7 +3,6 @@ import "lys/lys"
 import "material"
 import "bvh"
 import "camera"
-import "light"
 
 module xbvh = lbvh
 
@@ -40,44 +39,6 @@ let mkray_adjust_acne (h: hit) (wi: vec3): ray =
   let acne_offset = vec3.scale eps face_forward_normal
   in mkray (h.pos vec3.+ acne_offset) wi
 
--- One-sample model of multiple-importance sampling.
---
--- Consider both the material BSDF and the lights when sampling a `wo`
--- to converge fast for bost diffuse and glossy materials. Should also
--- be helpful for LIDAR.
---
--- https://graphics.stanford.edu/courses/cs348b-03/papers/veach-chapter9.pdf
--- 9.2.4
--- let one_sample (wo: vec3) (h: hit) (rng: rnge)
---              : (rnge, { estimator: vec3, wi: vec3 }) =
---   let p_sample_light = 0.8
---   let (rng, u) = random_unit_exclusive rng
---   let tmp_lights: []geom =
---     let vs = [ mkvec3 (-0.24) 1.98 0.16
---              , mkvec3 (-0.24) 1.98 (-0.22)
---              , mkvec3 0.23 1.98 (-0.22)
---              , mkvec3 0.23 1.98 0.16 ]
---     let ts = [ #triangle { a = vs[0], b = vs[1], c = vs[2] }
---              -- , #triangle { a = vs[2], b = vs[3], c = vs[0] }
---              ]
---     in ts
---   in if u < p_sample_light
---      then let (rng, { wi, bsdf, pdf }) = sample_light wo h tmp_lights rng
---           in (rng, { estimator = vec3.scale (1 / (pdf * p_sample_light)) bsdf, wi })
---      else let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
---           in (rng, { estimator = vec3.scale (1 / (pdf * (1 - p_sample_light))) bsdf, wi })
-
-  -- let (c0, c1) = (p_sample_light, 1 - p_sample_light)
-  -- in if u < p_sample_light
-  --    then let (rng, { wi, bsdf, pdf }) = sample_light wo h tmp_lights rng
-  --         let balance = pdf / (pdf + bsdf_pdf wo wi h)
-  --         let estimator = vec3.scale (1 / (c0 * pdf)) (vec3.scale balance bsdf)
-  --         in (rng, { estimator, wi })
-  --    else let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
-  --         let balance = pdf / (light_pdf tmp_lights + pdf)
-  --         let estimator = vec3.scale (1 / (c1 * pdf)) (vec3.scale balance bsdf)
-  --         in (rng, { estimator, wi })
-
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let tmax = f32.highest
@@ -104,13 +65,13 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
              let rng = advance_rng rng
              let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
              let wo = vec3_neg r.dir
-             -- let (rng, { estimator, wi }) = one_sample wo h rng
              let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
              let cosFalloff = f32.abs (vec3.dot h.normal wi)
-             --let throughput = throughput vec3.* (vec3.scale cosFalloff estimator)
-             let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) (bsdf_f wo wi h))
+             let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
              let r = mkray_adjust_acne h wi
-             in (radiance, throughput, r, rng)
+             in if pdf == 0
+                then finish (mkvec3 0 0 0)
+                else (radiance, throughput, r, rng)
            case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
