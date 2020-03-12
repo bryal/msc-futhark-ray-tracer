@@ -27,15 +27,13 @@ let vcol_to_argb (c: vec3): argb.colour =
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
+-- Create a ray from a point in a direction, fix for surface acne
 let mkray_adjust_acne (h: hit) (wi: vec3): ray =
-  -- Fix surface acne
-  --
-  -- NOTE: Don't just walk along `wi`, because then we get
+  -- Note that we don't just walk along `wi`, because then we get
   -- strange artifacts for some materials at extreme angles.
+  let face_forward_normal =
+    if vec3.dot wi h.normal >= 0 then h.normal else vec3_neg h.normal
   let eps = 0.001
-  let face_forward_normal = if vec3.dot wi h.normal >= 0
-                            then h.normal
-                            else vec3_neg h.normal
   let acne_offset = vec3.scale eps face_forward_normal
   in mkray (h.pos vec3.+ acne_offset) wi
 
