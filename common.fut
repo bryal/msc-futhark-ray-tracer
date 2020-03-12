@@ -80,6 +80,16 @@ let random_in_unit_square (rng: rnge): (rnge, (f32, f32)) =
   let (rng, y) = random_unit_exclusive rng
   in (rng, (x, y))
 
+-- PBR Book 13.6.5
+let random_in_triangle (rng: rnge): (rnge, (f32, f32)) =
+  let (rng, (u, v)) = random_in_unit_square rng
+  let su = f32.sqrt u
+  in (rng, (1 - su, v * su))
+
+let random_select [n] 'a (rng: rnge) (xs: [n]a): (rnge, a) =
+  let (rng, n) = rnge.rand rng
+  in (rng, unsafe xs[i32.u32 (n % u32.i32 (length xs))])
+
 let world_up: vec3 = mkvec3 0 1 0
 
 let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
