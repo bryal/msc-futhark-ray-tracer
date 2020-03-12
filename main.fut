@@ -37,25 +37,78 @@ let mkray_adjust_acne (h: hit) (wi: vec3): ray =
   let acne_offset = vec3.scale eps face_forward_normal
   in mkray (h.pos vec3.+ acne_offset) wi
 
-let light =
-  { point = mkvec3  0.0 1.5800 0
-  , emission = mkvec3 10 10 10 }
+type light = #pointlight { pos: vec3, emission: vec3 }
+           | #arealight { geom: geom, emission: vec3 }
 
-let direct_radiance (wo: vec3) (h: hit) (world: xbvh.bvh): vec3 =
-  let (wi, distance) = let v = light.pos vec3.- h.pos
-                       in (vec3.normalise v, vec3.norm v)
-  let occluded = let r = mkray_adjust_acne h wi
-                 in any_hit f32.highest r world
-  in if occluded
-     then mkvec3 0 0 0
-     else let cosFalloff = f32.abs (vec3.dot h.normal wi)
-          in vec3.scale (cosFalloff / (distance * distance))
-                        light.emission
+let occluded (h: hit) (lightp: vec3) (world: xbvh.bvh)
+           : bool =
+  let v = lightp vec3.- h.pos
+  let w = vec3.normalise v
+  in vec3.dot w h.normal > 0
+     && (let distance = vec3.norm v
+         let r = mkray_adjust_acne h w
+         in xbvh.any_hit distance r world)
+
+let sample_light (world: xbvh.bvh) (h: hit) (rng: rnge, l: light)
+               : { in_radiance: vec3, wi: vec3, pdf: f32 } =
+  let null_result = { in_radiance = mkvec3 0 0 0, wi = mkvec3 0 0 0, pdf = 0 }
+  in match l
+     case #pointlight { pos, emission } ->
+       let (wi, distance_sq) =
+         let v = pos vec3.- h.pos
+         in (vec3.normalise v, vec3.quadrance v)
+       in if occluded h pos world
+          then null_result
+          else { in_radiance = vec3.scale (1 / distance_sq) emission
+               , wi
+               , pdf = 1 }
+     case #arealight { geom, emission } ->
+       match geom
+       case #triangle { a, b, c } ->
+         let e1 = b vec3.- a
+         let e2 = c vec3.- a
+         let (area, lnormal) =
+           let c = vec3.cross e1 e2
+           in (vec3.norm c / 2, vec3.normalise c)
+         let (_rng, (u, v)) = random_in_triangle rng
+         let p = a vec3.+ vec3.scale u e1 vec3.+ vec3.scale v e2
+         let (wi, distance_sq) =
+           let v = p vec3.- h.pos
+           in (vec3.normalise v, vec3.quadrance v)
+         let cos_theta_l = vec3.dot lnormal (vec3_neg wi)
+         in if cos_theta_l <= 0 || occluded h p world
+            then null_result
+            else { in_radiance = vec3.scale (cos_theta_l / distance_sq) emission
+                 , wi
+                 , pdf = 1 / area}
+       case #sphere _ -> null_result
+
+let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (world: xbvh.bvh)
+                  : (rnge, vec3) =
+  let lights: []light =
+    [ #pointlight { pos = mkvec3 4 8 4
+                  , emission = mkvec3 200 200 200 } ] ++
+    map (\t -> #arealight { geom = t, emission = mkvec3 27 22 14 })
+        (mkrect [ mkvec3 (-0.24) 1.97 0.16
+                , mkvec3 (-0.24) 1.97 (-0.22)
+                , mkvec3 0.23 1.97 (-0.22)
+                , mkvec3 0.23 1.97 0.16 ])
+  let (rng, l) = random_select rng lights
+  let s = sample_light world h (rng, l)
+  let rng = advance_rng rng
+  in if s.in_radiance == mkvec3 0 0 0
+     then (rng, mkvec3 0 0 0)
+     else let cosFalloff = f32.abs (vec3.dot h.normal s.wi)
+          let pdf = s.pdf / f32.i32 (length lights)
+          let out_radiance =
+            s.in_radiance vec3.*
+            vec3.scale (cosFalloff / pdf) (bsdf_f wo s.wi h)
+          in (rng, out_radiance)
 
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let tmax = f32.highest
-  let sky = mkvec3 0.8 0.9 1.0
+  let sky = mkvec3 0 0 0
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
     let choked_throughput = mkvec3 0 0 0
@@ -77,16 +130,14 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
            case #just h ->
              let rng = advance_rng rng
              let wo = vec3_neg r.dir
-             let radiance =
-               radiance vec3.+
-               throughput vec3.* (h.mat.emission vec3.+
-                                  direct_radiance wo h world)
+             let (rng, direct_radiance) = direct_radiance rng wo h world
+             let radiance = radiance vec3.+ throughput vec3.* direct_radiance
              let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
              let cosFalloff = f32.abs (vec3.dot h.normal wi)
              let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
              let r = mkray_adjust_acne h wi
              in if pdf == 0
-                then finish (mkvec3 0 0 0)
+                then finish radiance
                 else (radiance, throughput, r, rng)
            case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
 
