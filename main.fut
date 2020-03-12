@@ -250,6 +250,10 @@ module lys: lys with text_content = text_content = {
         then s with cam = move_camera s.cam (mkvec3 0 (-1) 0)
         else if key == SDLK_SPACE
         then s with mode = !s.mode
+        else if key == SDLK_n
+        then s with mode = false
+        else if key == SDLK_m
+        then s with mode = true
         else if key == SDLK_i
         then s with cam =
           (s.cam with aperture = f32.min 2 (s.cam.aperture + 0.08))
