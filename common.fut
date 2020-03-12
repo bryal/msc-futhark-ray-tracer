@@ -50,6 +50,9 @@ let vec3_neg ({ x, y, z }: vec3): vec3 = { x = -x, y = -y, z = -z }
 let vec3_from_array (xs: [3]f32): vec3 =
   { x = xs[0], y = xs[1], z = xs[2] }
 
+let vec3_lerp (a: vec3) (b: vec3) (r: f32): vec3 =
+  vec3.scale (1 - r) a vec3.+ vec3.scale r b
+
 let clamp ((min, max): (f32, f32)) (x: f32): f32 =
   f32.max min (f32.min max x)
 
