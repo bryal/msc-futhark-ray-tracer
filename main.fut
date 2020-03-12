@@ -39,6 +39,21 @@ let mkray_adjust_acne (h: hit) (wi: vec3): ray =
   let acne_offset = vec3.scale eps face_forward_normal
   in mkray (h.pos vec3.+ acne_offset) wi
 
+let light =
+  { point = mkvec3  0.0 1.5800 0
+  , emission = mkvec3 10 10 10 }
+
+let direct_radiance (wo: vec3) (h: hit) (world: xbvh.bvh): vec3 =
+  let (wi, distance) = let v = light.pos vec3.- h.pos
+                       in (vec3.normalise v, vec3.norm v)
+  let occluded = let r = mkray_adjust_acne h wi
+                 in any_hit f32.highest r world
+  in if occluded
+     then mkvec3 0 0 0
+     else let cosFalloff = f32.abs (vec3.dot h.normal wi)
+          in vec3.scale (cosFalloff / (distance * distance))
+                        light.emission
+
 let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         : vec3 =
   let tmax = f32.highest
@@ -63,8 +78,11 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
         in match xbvh.closest_hit tmax r mats world
            case #just h ->
              let rng = advance_rng rng
-             let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
              let wo = vec3_neg r.dir
+             let radiance =
+               radiance vec3.+
+               throughput vec3.* (h.mat.emission vec3.+
+                                  direct_radiance wo h world)
              let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
              let cosFalloff = f32.abs (vec3.dot h.normal wi)
              let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
