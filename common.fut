@@ -58,6 +58,9 @@ let clamp ((min, max): (f32, f32)) (x: f32): f32 =
 
 let error_vec: vec3 = mkvec3 1000 0 1000
 
+let map_fst 'a 'b 'c (f: a -> c) (x: a, y: b): (c, b) = (f x, y)
+let map_snd 'a 'b 'c (f: b -> c) (x: a, y: b): (a, c) = (x, f y)
+
 -- [0, 1)
 let random_unit_exclusive (rng: rnge): (rnge, f32) =
   dist.rand (0, 0.9999) rng
