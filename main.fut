@@ -44,10 +44,11 @@ let occluded (h: hit) (lightp: vec3) (world: xbvh.bvh)
            : bool =
   let v = lightp vec3.- h.pos
   let w = vec3.normalise v
-  in vec3.dot w h.normal > 0
-     && (let distance = vec3.norm v
+  let eps = 0.01
+  in vec3.dot w h.normal <= 0
+     || (let distance = vec3.norm v
          let r = mkray_adjust_acne h w
-         in xbvh.any_hit distance r world)
+         in xbvh.any_hit (distance - eps) r world)
 
 let sample_light (world: xbvh.bvh) (h: hit) (rng: rnge, l: light)
                : { in_radiance: vec3, wi: vec3, pdf: f32 } =
