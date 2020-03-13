@@ -31,10 +31,8 @@ let advance_rng (rng: rnge): rnge =
 let mkray_adjust_acne (h: hit) (wi: vec3): ray =
   -- Note that we don't just walk along `wi`, because then we get
   -- strange artifacts for some materials at extreme angles.
-  let face_forward_normal =
-    if vec3.dot wi h.normal >= 0 then h.normal else vec3_neg h.normal
   let eps = 0.001
-  let acne_offset = vec3.scale eps face_forward_normal
+  let acne_offset = vec3.scale eps (same_side wi h.normal)
   in mkray (h.pos vec3.+ acne_offset) wi
 
 type light = #pointlight { pos: vec3, emission: vec3 }

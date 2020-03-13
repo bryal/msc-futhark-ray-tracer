@@ -53,6 +53,10 @@ let vec3_from_array (xs: [3]f32): vec3 =
 let vec3_lerp (a: vec3) (b: vec3) (r: f32): vec3 =
   vec3.scale (1 - r) a vec3.+ vec3.scale r b
 
+-- If necessary, flip `w` around to face the same side as `dominant`.
+let same_side (dominant: vec3) (w: vec3): vec3 =
+  vec3.scale (f32.sgn (vec3.dot dominant w)) w
+
 let clamp ((min, max): (f32, f32)) (x: f32): f32 =
   f32.max min (f32.min max x)
 
