@@ -362,10 +362,8 @@ module lys: lys with text_content = text_content = {
 
   type text_content = text_content
 
-  let text_content (render_duration: f32) (s: state): text_content =
-    let rd = if s.mode then 0 else u32.f32 render_duration
-    in ( rd, s.samples, s.n_frames , s.cam.aperture, s.cam.focal_dist,
-      s.subsampling )
+  let text_content (fps: f32) (s: state): text_content =
+    (u32.f32 fps, s.samples, s.n_frames , s.cam.aperture, s.cam.focal_dist, s.subsampling )
 
   let text_colour = const argb.yellow
 }
