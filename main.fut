@@ -53,6 +53,7 @@ let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
   let v = lightp vec3.- h.pos
   let w = vec3.normalise v
   let eps = 0.01
+  -- TODO: This is wrong for refraction out of an object, right?
   in vec3.dot w h.normal <= 0
      || (let distance = vec3.norm v
          let r = mkray_adjust_acne h w
@@ -139,6 +140,7 @@ let balance_heuristic (nf: u32, pdf_f: f32) (ng: u32, pdf_g: f32): f32 =
   let (nf, ng) = (f32.u32 nf, f32.u32 ng)
   in nf * pdf_f / (nf * pdf_f + ng * pdf_g)
 
+-- TODO: LTDE Caustics don't seem to work. Why?
 let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
                   : (rnge, vec3) =
   -- Sample light with MIS
