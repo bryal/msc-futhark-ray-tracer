@@ -9,6 +9,18 @@ module xbvh = lbvh
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
 
+type light = #pointlight { pos: vec3, emission: vec3 }
+           | #arealight { geom: geom, emission: vec3 }
+
+type~ scene =
+  { objs: []obj
+  , mats: []material }
+
+type~ accel_scene =
+  { objs: xbvh.bvh
+  , mats: []material
+  , lights: []light }
+
 type~ state = { time: f32
               , dimensions: (u32, u32)
               , subsampling: u32
@@ -18,8 +30,7 @@ type~ state = { time: f32
               , n_frames: u32
               , mode: bool
               , cam: camera
-              , mats: []material
-              , world: []obj }
+              , scene: scene }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -35,10 +46,7 @@ let mkray_adjust_acne (h: hit) (wi: vec3): ray =
   let acne_offset = vec3.scale eps (same_side wi h.normal)
   in mkray (h.pos vec3.+ acne_offset) wi
 
-type light = #pointlight { pos: vec3, emission: vec3 }
-           | #arealight { geom: geom, emission: vec3 }
-
-let occluded (h: hit) (lightp: vec3) (world: xbvh.bvh)
+let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
            : bool =
   let v = lightp vec3.- h.pos
   let w = vec3.normalise v
@@ -46,9 +54,9 @@ let occluded (h: hit) (lightp: vec3) (world: xbvh.bvh)
   in vec3.dot w h.normal <= 0
      || (let distance = vec3.norm v
          let r = mkray_adjust_acne h w
-         in xbvh.any_hit (distance - eps) r world)
+         in xbvh.any_hit (distance - eps) r objs)
 
-let sample_light (world: xbvh.bvh) (h: hit) (rng: rnge, l: light)
+let sample_light (objs: xbvh.bvh) (h: hit) (rng: rnge, l: light)
                : { in_radiance: vec3, wi: vec3, pdf: f32 } =
   let null_result = { in_radiance = mkvec3 0 0 0, wi = mkvec3 0 0 0, pdf = 0 }
   in match l
@@ -56,7 +64,7 @@ let sample_light (world: xbvh.bvh) (h: hit) (rng: rnge, l: light)
        let (wi, distance_sq) =
          let v = pos vec3.- h.pos
          in (vec3.normalise v, vec3.quadrance v)
-       in if occluded h pos world
+       in if occluded h pos objs
           then null_result
           else { in_radiance = vec3.scale (1 / distance_sq) emission
                , wi
@@ -75,40 +83,31 @@ let sample_light (world: xbvh.bvh) (h: hit) (rng: rnge, l: light)
            let v = p vec3.- h.pos
            in (vec3.normalise v, vec3.quadrance v)
          let cos_theta_l = vec3.dot lnormal (vec3_neg wi)
-         in if cos_theta_l <= 0 || occluded h p world
+         in if cos_theta_l <= 0 || occluded h p objs
             then null_result
             else { in_radiance = vec3.scale (cos_theta_l / distance_sq) emission
                  , wi
                  , pdf = 1 / area}
        case #sphere _ -> null_result
 
-let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (world: xbvh.bvh)
+let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (scene: accel_scene)
                   : (rnge, vec3) =
-  let lights: []light =
-    [ #pointlight { pos = mkvec3 4 8 4
-                  , emission = mkvec3 300 300 300 } ]
-    ++
-    map (\t -> #arealight { geom = t, emission = mkvec3 60 50 30 })
-        (mkrect [ mkvec3 (-0.24) 1.91 0.16
-                , mkvec3 (-0.24) 1.91 (-0.22)
-                , mkvec3 0.23 1.91 (-0.22)
-                , mkvec3 0.23 1.91 0.16 ])
-  let (rng, l) = random_select rng lights
-  let s = sample_light world h (rng, l)
+  let (rng, l) = random_select rng scene.lights
+  let s = sample_light scene.objs h (rng, l)
   let rng = advance_rng rng
   in if s.in_radiance == mkvec3 0 0 0
      then (rng, mkvec3 0 0 0)
      else let cosFalloff = f32.abs (vec3.dot h.normal s.wi)
-          let pdf = s.pdf / f32.i32 (length lights)
+          let pdf = s.pdf / f32.i32 (length scene.lights)
           let out_radiance =
             s.in_radiance vec3.*
             vec3.scale (cosFalloff / pdf) (bsdf_f wo s.wi h)
           in (rng, out_radiance)
 
-let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
+let color (r: ray) (scene: accel_scene) (rng: rnge)
         : vec3 =
   let tmax = f32.highest
-  let sky = mkvec3 0 0 0
+  let sky = mkvec3 0.3 0.2 0.4
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
     let choked_throughput = mkvec3 0 0 0
@@ -127,11 +126,11 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
           (mkvec3 0 0 0, mkvec3 1 1 1, r, false, rng)
      while vec3.norm throughput > 0.001 && !(roulette_terminate rng)
      do let throughput = vec3.scale (1 / (1 - p_termination)) throughput
-        in match xbvh.closest_hit tmax r mats world
+        in match xbvh.closest_hit tmax r scene.mats scene.objs
            case #just h ->
              let rng = advance_rng rng
              let wo = vec3_neg r.dir
-             let (rng, direct_radiance) = direct_radiance rng wo h world
+             let (rng, direct_radiance) = direct_radiance rng wo h scene
              let radiance = radiance vec3.+ throughput vec3.*
                (direct_radiance
                 vec3.+ if !has_bounced
@@ -171,9 +170,8 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale coord.y vertical
             vec3.- origin)
 
-let sample (world: xbvh.bvh)
+let sample (scene: accel_scene)
            (cam: camera)
-           (mats: []material)
            (w: f32, h: f32)
            (j: u32, i: u32)
            (offset: vec2)
@@ -184,10 +182,21 @@ let sample (world: xbvh.bvh)
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let r = get_ray cam ratio xy rng
-  in color r world mats rng
+  in color r scene rng
+
+let get_lights ({ objs, mats }: scene): []light =
+  let with_emission obj =
+    { geom = obj.geom
+    , emission = (unsafe mats[i32.u32 obj.mat_ix]).emission }
+  in map (\l -> #arealight l)
+     <| filter ((> 0) <-< vec3.norm <-< (.emission))
+     <| map with_emission objs
+
+let accelerate_scene (s: scene): accel_scene =
+  { objs = xbvh.build s.objs, mats = s.mats, lights = get_lights s }
 
 let sample_all (s: state): (rnge, [][]vec3) =
-  let world_bvh = xbvh.build s.world
+  let scene = accelerate_scene s.scene
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
@@ -199,9 +208,8 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample world_bvh
+    in (vec3./) (sample scene
                         s.cam
-                        s.mats
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
                         offset rng)
@@ -269,11 +277,13 @@ module lys: lys with text_content = text_content = {
     , samples = 1
     , n_frames = 1
     , mode = false
-    , cam = { pitch = 0.0, yaw = 0.0
+    , cam = { pitch = 0.0
+            , yaw = 0.0
             , origin = mkvec3 0 0.8 1.8
-            , aperture = 0.0, focal_dist = 1.5 }
-    , mats = parse_mats mat_data
-    , world = parse_triangles tri_geoms tri_mats }
+            , aperture = 0.0
+            , focal_dist = 1.5 }
+    , scene = { objs = parse_triangles tri_geoms tri_mats
+              , mats = parse_mats mat_data } }
 
   let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false
