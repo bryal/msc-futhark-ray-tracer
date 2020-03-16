@@ -30,7 +30,7 @@ type~ state = { time: f32
               , n_frames: u32
               , mode: bool
               , cam: camera
-              , scene: scene }
+              , scene: accel_scene }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -196,7 +196,6 @@ let accelerate_scene (s: scene): accel_scene =
   { objs = xbvh.build s.objs, mats = s.mats, lights = get_lights s }
 
 let sample_all (s: state): (rnge, [][]vec3) =
-  let scene = accelerate_scene s.scene
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
@@ -208,7 +207,7 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample scene
+    in (vec3./) (sample s.scene
                         s.cam
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
@@ -269,21 +268,23 @@ module lys: lys with text_content = text_content = {
            (tri_mats: []u32)
            (mat_data: [][10]f32)
          : state =
-    { time = 0
-    , dimensions = (w, h)
-    , subsampling = 2
-    , rng = minstd_rand.rng_from_seed [123]
-    , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
-    , samples = 1
-    , n_frames = 1
-    , mode = false
-    , cam = { pitch = 0.0
-            , yaw = 0.0
-            , origin = mkvec3 0 0.8 1.8
-            , aperture = 0.0
-            , focal_dist = 1.5 }
-    , scene = { objs = parse_triangles tri_geoms tri_mats
-              , mats = parse_mats mat_data } }
+    let raw_scene =
+      { objs = parse_triangles tri_geoms tri_mats
+      , mats = parse_mats mat_data }
+    in { time = 0
+       , dimensions = (w, h)
+       , subsampling = 2
+       , rng = minstd_rand.rng_from_seed [123]
+       , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
+       , samples = 1
+       , n_frames = 1
+       , mode = false
+       , cam = { pitch = 0.0
+               , yaw = 0.0
+               , origin = mkvec3 0 0.8 1.8
+               , aperture = 0.0
+               , focal_dist = 1.5 }
+       , scene = accelerate_scene raw_scene }
 
   let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false
