@@ -9,8 +9,10 @@ module xbvh = lbvh
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
 
+type arealight = { geom: geom, emission: vec3 }
+
 type light = #pointlight { pos: vec3, emission: vec3 }
-           | #arealight { geom: geom, emission: vec3 }
+           | #arealight arealight
 
 type~ scene =
   { objs: []obj
@@ -56,53 +58,129 @@ let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
          let r = mkray_adjust_acne h w
          in xbvh.any_hit (distance - eps) r objs)
 
-let sample_light (objs: xbvh.bvh) (h: hit) (rng: rnge, l: light)
-               : { in_radiance: vec3, wi: vec3, pdf: f32 } =
-  let null_result = { in_radiance = mkvec3 0 0 0, wi = mkvec3 0 0 0, pdf = 0 }
-  in match l
-     case #pointlight { pos, emission } ->
-       let (wi, distance_sq) =
-         let v = pos vec3.- h.pos
-         in (vec3.normalise v, vec3.quadrance v)
-       in if occluded h pos objs
-          then null_result
-          else { in_radiance = vec3.scale (1 / distance_sq) emission
-               , wi
-               , pdf = 1 }
-     case #arealight { geom, emission } ->
-       match geom
-       case #triangle { a, b, c } ->
-         let e1 = b vec3.- a
-         let e2 = c vec3.- a
-         let (area, lnormal) =
-           let c = vec3.cross e1 e2
-           in (vec3.norm c / 2, vec3.normalise c)
-         let (_rng, (u, v)) = random_in_triangle rng
-         let p = a vec3.+ vec3.scale u e1 vec3.+ vec3.scale v e2
-         let (wi, distance_sq) =
-           let v = p vec3.- h.pos
-           in (vec3.normalise v, vec3.quadrance v)
-         let cos_theta_l = vec3.dot lnormal (vec3_neg wi)
-         in if cos_theta_l <= 0 || occluded h p objs
-            then null_result
-            else { in_radiance = vec3.scale (cos_theta_l / distance_sq) emission
-                 , wi
-                 , pdf = 1 / area}
-       case #sphere _ -> null_result
+type light_sample = { pos: vec3, wi: vec3, in_radiance: vec3, pdf: f32 }
 
+let trianglelight_incident_radiance (hitp: vec3) (lightp: vec3) (t: triangle) (emission: vec3): vec3 =
+  let (wi, distance_sq) =
+    let v = lightp vec3.- hitp
+    in (vec3.normalise v, vec3.quadrance v)
+  let (e1, e2) = (t.b vec3.- t.a, t.c vec3.- t.a)
+  let lnormal = vec3.normalise (vec3.cross e1 e2)
+  let cos_theta_l = vec3.dot (vec3_neg wi) lnormal
+  in vmax (mkvec3 0 0 0)
+          (vec3.scale (cos_theta_l / distance_sq) emission)
+
+let arealight_incident_radiance (hitp: vec3) (lightp: vec3) (light: arealight): vec3 =
+  match light.geom
+  case #triangle t -> trianglelight_incident_radiance hitp lightp t light.emission
+  case #sphere _ -> mkvec3 0 0 0
+
+let light_incident_radiance (hitp: vec3) (lightp: vec3) (light: light): vec3 =
+  match light
+  case #pointlight _ -> mkvec3 0 0 0 -- Delta distribution. Must be handled specially
+  case #arealight l -> arealight_incident_radiance hitp lightp l
+
+let triangle_area (t: triangle): f32 =
+  let e1 = t.b vec3.- t.a
+  let e2 = t.c vec3.- t.a
+  in vec3.norm (vec3.cross e1 e2) / 2
+
+let arealight_pdf (l: arealight): f32 =
+  match l.geom
+  case #sphere _ -> 0
+  case #triangle t -> 1 / triangle_area t
+
+let light_pdf (l: light): f32 =
+  match l
+  case #pointlight _ -> 0
+  case #arealight a -> arealight_pdf a
+
+let sample_pointlight (h: hit) (pos: vec3) (emission: vec3)
+                    : light_sample =
+  let (wi, distance_sq) =
+    let v = pos vec3.- h.pos
+    in (vec3.normalise v, vec3.quadrance v)
+  let in_radiance = vec3.scale (1 / distance_sq) emission
+  in { pos, wi, in_radiance, pdf = 1 }
+
+let sample_arealight (rng: rnge) (h: hit) (l: arealight)
+                   : (rnge, light_sample) =
+    match l.geom
+    case #triangle t ->
+      let e1 = t.b vec3.- t.a
+      let e2 = t.c vec3.- t.a
+      let area = vec3.norm (vec3.cross e1 e2) / 2
+      let (_rng, (u, v)) = random_in_triangle rng
+      let p = t.a vec3.+ vec3.scale u e1 vec3.+ vec3.scale v e2
+      let wi = vec3.normalise (p vec3.- h.pos)
+      let in_radiance = trianglelight_incident_radiance h.pos p t l.emission
+      in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
+    -- TODO
+    case #sphere _ ->
+      (rng, { pos = mkvec3 0 0 0
+            , wi = mkvec3 0 0 0
+            , in_radiance = mkvec3 0 0 0
+            , pdf = 1 })
+
+let sample_light (rng: rnge) (h: hit) (l: light) (objs: xbvh.bvh)
+               : (rnge, light_sample) =
+  let (rng, light_sample) =
+    match l
+    case #pointlight { pos, emission } ->
+      (rng, sample_pointlight h pos emission)
+    case #arealight a ->
+      sample_arealight rng h a
+  in (rng, if occluded h light_sample.pos objs
+           then light_sample with in_radiance = mkvec3 0 0 0
+           else light_sample)
+
+-- The Balance heuristic of Multiple Importance Sampling
+let balance_heuristic (nf: u32, pdf_f: f32) (ng: u32, pdf_g: f32): f32 =
+  let (nf, ng) = (f32.u32 nf, f32.u32 ng)
+  in nf * pdf_f / (nf * pdf_f + ng * pdf_g)
+
+let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
+                  : (rnge, vec3) =
+  -- Sample light with MIS
+  let (rng, light_radiance) =
+    let (rng, { pos, wi, in_radiance, pdf }) = sample_light rng h l objs
+    in if in_radiance == mkvec3 0 0 0
+       then (rng, mkvec3 0 0 0)
+       else let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) (bsdf_f wo wi h)
+            let scattering_pdf = bsdf_pdf wo wi h
+            let weight = balance_heuristic (1, pdf) (1, scattering_pdf)
+            in (rng, vec3.scale (weight / pdf) (f vec3.* in_radiance))
+  -- Sample BSDF with MIS
+  let (rng, bsdf_radiance) =
+    match l
+    case #pointlight _ -> (rng, mkvec3 0 0 0)
+    case #arealight l ->
+      let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
+      in if bsdf == mkvec3 0 0 0 || pdf == 0
+         then (rng, mkvec3 0 0 0)
+         else let r = mkray_adjust_acne h wi
+              in match hit_geom f32.highest r l.geom
+                 case #just lh ->
+                   if occluded h lh.pos objs
+                   then (rng, mkvec3 0 0 0)
+                   else let in_radiance = arealight_incident_radiance h.pos lh.pos l
+                        let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) bsdf
+                        let weight = balance_heuristic (1, pdf) (1, arealight_pdf l)
+                        in (rng, vec3.scale (weight / pdf) (f vec3.* in_radiance))
+                 case #nothing -> (rng, mkvec3 0 0 0)
+  in (rng, light_radiance vec3.+ bsdf_radiance)
+
+-- Compute the direct radiance by stochastically sampling one light,
+-- taking the reflection direction into account with Multiple
+-- Importance Sampling to eliminate fireflies and get caustics.
+--
+-- Basically equivalent to `UniformSampleOneLight` of PBR Book 14.3.
 let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (scene: accel_scene)
                   : (rnge, vec3) =
   let (rng, l) = random_select rng scene.lights
-  let s = sample_light scene.objs h (rng, l)
-  let rng = advance_rng rng
-  in if s.in_radiance == mkvec3 0 0 0
-     then (rng, mkvec3 0 0 0)
-     else let cosFalloff = f32.abs (vec3.dot h.normal s.wi)
-          let pdf = s.pdf / f32.i32 (length scene.lights)
-          let out_radiance =
-            s.in_radiance vec3.*
-            vec3.scale (cosFalloff / pdf) (bsdf_f wo s.wi h)
-          in (rng, out_radiance)
+  let (rng, radiance) = estimate_direct rng wo h l scene.objs
+  let n_lights = f32.i32 (length scene.lights)
+  in (rng, vec3.scale n_lights radiance)
 
 let color (r: ray) (scene: accel_scene) (rng: rnge)
         : vec3 =

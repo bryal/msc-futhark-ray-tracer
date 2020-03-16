@@ -67,6 +67,11 @@ let cosine_sample_hemisphere (rng: rnge): (rnge, vec3) =
 let diffuse_bsdf (color: vec3): vec3 =
   vec3.scale inv_pi color
 
+let diffuse_pdf (wo: vec3) (wi: vec3): f32 =
+  if same_hemisphere wo wi
+  then cos_theta wi * inv_pi
+  else 0
+
 -- TODO: Consider Oren-Nayar model instead of Lambertian
 --
 -- Diffuse reflection according to Lambertian model
@@ -107,6 +112,9 @@ let refract (wi: vec3) (n: vec3) (eta: f32)
 --    routines (see Chapter 14).
 let transmission_bsdf: vec3 = mkvec3 0 0 0
 
+-- PBR Book 14.1.3
+let transmission_pdf: f32 = 0
+
 -- Either refract into / out of a transmitting material, or total
 -- internal reflection. PBR Book 8.2.3
 let transmission_sample_dir (wo: vec3) (m: material)
@@ -132,6 +140,11 @@ let transmission_sample_dir (wo: vec3) (m: material)
 -- but is handled in `dielectric_bsdf` instead.
 let dielectric_refraction_bsdf (m: material): vec3 =
   vec3_lerp transmission_bsdf (diffuse_bsdf m.color) m.opacity
+
+let dielectric_refraction_pdf (wo: vec3) (wh: vec3) (m: material): f32 =
+  f32.lerp transmission_pdf
+           (diffuse_pdf wo wh)
+           m.opacity
 
 let dielectric_refraction_sample_dir (wo: vec3) (m: material) (rng: rnge)
                                    : (rnge, dir_sample) =
@@ -201,6 +214,10 @@ let beckmann_alpha (roughness: f32): f32 =
   --    + 0.0171201 * x * x * x
   --    + 0.000640711 * x * x * x * x
 
+let microfacet_distribution_pdf (wh: vec3) (m: material): f32 =
+  let alpha = beckmann_alpha m.roughness
+  in microfacet_distribution alpha wh * f32.abs (cos_theta wh)
+
 -- D * G in literature. Implementation of the Beckmann–Spizzichino
 -- model, based on PBR Book 8.4.2 & 8.4.3
 let microfacet_factor (wo: vec3) (wi: vec3) (m: material): f32 =
@@ -246,6 +263,12 @@ let dielectric_reflection_sample_wh (wo: vec3) (m: material) (rng: rnge)
   let pdf_wh = microfacet_distribution alpha wh * f32.abs cos_theta
   in (rng, wh, pdf_wh)
 
+let dielectric_reflection_pdf (wo: vec3) (wi: vec3) (m: material): f32 =
+  if !(same_hemisphere wo wi)
+  then 0
+  else let wh = vec3.normalise (wo vec3.+ wi)
+       in microfacet_distribution_pdf wh m / (4 * vec3.dot wo wh)
+
 -- PBR Book 14.1.1
 let dielectric_reflection_sample_dir (wo: vec3) (m: material) (rng: rnge)
                                    : (rnge, dir_sample) =
@@ -266,6 +289,13 @@ let dielectric_bsdf (wo: vec3) (wi: vec3) (m: material): vec3 =
                (dielectric_reflection_bsdf wo wi m)
                reflectance
 
+let dielectric_pdf (wo: vec3) (wi: vec3) (m: material): f32 =
+  if cos_theta wo <= 0
+  then dielectric_refraction_pdf wo wi m
+  else f32.lerp (dielectric_refraction_pdf wo wi m)
+                (dielectric_reflection_pdf wo wi m)
+                (fresnel_reflectance wo m)
+
 -- NOTE: May not respect conservation of energy properly, as we're
 --       just adapting Torrance-Sparrow to a fresnel-blend material
 --       intuitively. PBR book 8.5 talks more about this. Look at the
@@ -283,6 +313,9 @@ let dielectric_sample_dir (wo: vec3) (m: material) (rng: rnge)
 let metal_bsdf (wo: vec3) (wi: vec3) (m: material): vec3 =
   m.color vec3.* dielectric_reflection_bsdf wo wi m
 
+let metal_pdf (wo: vec3) (wi: vec3) (m: material): f32 =
+  dielectric_reflection_pdf wo wi m
+
 let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
                    : (rnge, dir_sample) =
   let (rng, sample) = dielectric_reflection_sample_dir wo m rng
@@ -290,6 +323,9 @@ let metal_sample_dir (wo: vec3) (m: material) (rng: rnge)
 
 let uber_bsdf (wo: vec3) (wi: vec3) (m: material): vec3 =
   vec3_lerp (dielectric_bsdf wo wi m) (metal_bsdf wo wi m) m.metalness
+
+let uber_pdf (wo: vec3) (wi: vec3) (m: material): f32 =
+  f32.lerp (metal_pdf wo wi m) (dielectric_pdf wo wi m) m.metalness
 
 -- Sample a direction accodring to a distribution that is similar to
 -- the material's corresponding BSDF distribution.
@@ -325,6 +361,11 @@ let bsdf_f (wo: vec3) (wi: vec3) (h: hit): vec3 =
   let onb = mk_orthonormal_basis h.normal
   let (wo, wi) = (world_to_local onb wo, world_to_local onb wi)
   in uber_bsdf wo wi h.mat
+
+let bsdf_pdf (wo: vec3) (wi: vec3) (h: hit): f32 =
+  let onb = mk_orthonormal_basis h.normal
+  let (wo, wi) = (world_to_local onb wo, world_to_local onb wi)
+  in uber_pdf wo wi h.mat
 
 -- To make some calculations simpler, compute all
 -- reflection/refraction vectors in a local space where the normal is
