@@ -6,10 +6,22 @@
 
 import "common"
 
-type dir_sample = { wi: vec3, bsdf: vec3, pdf: f32 }
+-- A value of a Probability Density Function
+type sample_pdf
+  -- The PDF is a dirac delta function. "Can't" be sampled by chanse
+  -- -- we must handle it explicitly.
+  = #delta
+  -- An impossible event. Equivalent to pdf = 0. Applies to
+  -- e.g. reflecting/refracting once a ray has been refracted into a
+  -- metal (it's absorbed and will never escape!).
+  | #impossible
+  -- Non-zero PDF value
+  | #nonzero f32
+
+type dir_sample = { wi: vec3, bsdf: vec3, pdf: sample_pdf }
 
 let null_sample: dir_sample =
-  { wi = mkvec3 0 0 0, bsdf = mkvec3 0 0 0, pdf = 0 }
+  { wi = mkvec3 0 0 0, bsdf = mkvec3 0 0 0, pdf = #impossible }
 
 let local_normal = mkvec3 0 0 1
 
@@ -77,10 +89,9 @@ let diffuse_pdf (wo: vec3) (wi: vec3): f32 =
 -- Diffuse reflection according to Lambertian model
 let diffuse_sample_dir (m: material) (rng: rnge): (rnge, dir_sample) =
   let (rng, wi) = cosine_sample_hemisphere rng
-  -- TODO: Can / when do we get wi in the wrong hemisphere? Float
-  --       error? Consider returning pdf and/or bsdf = 0 when that is
-  --       the case.
-  in (rng, { wi, bsdf = diffuse_bsdf m.color, pdf = cos_theta wi * inv_pi })
+  in (rng, { wi
+           , bsdf = diffuse_bsdf m.color
+           , pdf = #nonzero (cos_theta wi * inv_pi) })
 
 -- PBR Book 8.2.3
 let refract (wi: vec3) (n: vec3) (eta: f32)
@@ -128,13 +139,13 @@ let transmission_sample_dir (wo: vec3) (m: material)
      case #refraction wi ->
        { wi
        , bsdf = mkvec3_repeat (1 / f32.abs (cos_theta wi))
-       , pdf = 1 }
+       , pdf = #delta }
      case #total_internal_reflection wi ->
        { wi
        -- TODO: This BSDF may well be wrong. Fix somehow. It's up to
        --       you, future us!
        , bsdf = mkvec3_repeat (1 / f32.abs (cos_theta wi))
-       , pdf = 1 }
+       , pdf = #delta }
 
 -- Note that attenuation by fresnel reflectance does not happen here,
 -- but is handled in `dielectric_bsdf` instead.
@@ -274,12 +285,13 @@ let dielectric_reflection_sample_dir (wo: vec3) (m: material) (rng: rnge)
                                    : (rnge, dir_sample) =
   let (rng, wh, pdf_wh) = dielectric_reflection_sample_wh wo m rng
   let wi = reflect wo wh
-  in if !(same_hemisphere wo wi)
-     then (rng, null_sample)
-     else ( rng
-          , { wi
-            , bsdf = dielectric_reflection_bsdf wo wi m
-            , pdf = pdf_wh / (4 * vec3.dot wo wh) } )
+  let pdf = if pdf_wh > 0
+            then #nonzero (pdf_wh / (4 * vec3.dot wo wh))
+            else #impossible
+  in ( rng
+     , if !(same_hemisphere wo wi)
+       then null_sample
+       else { wi, bsdf = dielectric_reflection_bsdf wo wi m, pdf } )
 
 let dielectric_bsdf (wo: vec3) (wi: vec3) (m: material): vec3 =
   let reflectance = if cos_theta wo <= 0

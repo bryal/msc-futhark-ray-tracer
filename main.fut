@@ -139,13 +139,13 @@ let balance_heuristic (nf: u32, pdf_f: f32) (ng: u32, pdf_g: f32): f32 =
   let (nf, ng) = (f32.u32 nf, f32.u32 ng)
   in nf * pdf_f / (nf * pdf_f + ng * pdf_g)
 
--- TODO: LTDE Caustics don't seem to work. Why?
+-- Estimate direct light contribution using Multiple Importance Sampling.
 let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
                   : (rnge, vec3) =
   -- Sample light with MIS
   let (rng, light_radiance) =
-    let (rng, { pos, wi, in_radiance, pdf }) = sample_light rng h l objs
-    in if in_radiance == mkvec3 0 0 0
+    let (rng, { pos = _, wi, in_radiance, pdf }) = sample_light rng h l objs
+    in if pdf == 0 || in_radiance == mkvec3 0 0 0
        then (rng, mkvec3 0 0 0)
        else let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) (bsdf_f wo wi h)
             let scattering_pdf = bsdf_pdf wo wi h
@@ -157,18 +157,22 @@ let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
     case #pointlight _ -> (rng, mkvec3 0 0 0)
     case #arealight l ->
       let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
-      in if bsdf == mkvec3 0 0 0 || pdf == 0
-         then (rng, mkvec3 0 0 0)
-         else let r = mkray_adjust_acne h wi
-              in match hit_geom f32.highest r l.geom
-                 case #just lh ->
-                   if occluded h lh.pos objs
-                   then (rng, mkvec3 0 0 0)
-                   else let in_radiance = arealight_incident_radiance h.pos lh.pos l
-                        let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) bsdf
-                        let weight = balance_heuristic (1, pdf) (1, arealight_pdf l)
-                        in (rng, vec3.scale (weight / pdf) (f vec3.* in_radiance))
-                 case #nothing -> (rng, mkvec3 0 0 0)
+      in ( rng
+         , let r = mkray_adjust_acne h wi
+           in match hit_geom f32.highest r l.geom
+              case #nothing -> mkvec3 0 0 0
+              case #just lh ->
+                if occluded h lh.pos objs
+                then mkvec3 0 0 0
+                else let in_radiance = arealight_incident_radiance h.pos lh.pos l
+                     let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) bsdf
+                     in match pdf
+                        case #impossible -> mkvec3 0 0 0
+                        case #delta -> f vec3.* in_radiance
+                        case #nonzero pdf ->
+                          let light_pdf = arealight_pdf l
+                          let weight = balance_heuristic (1, pdf) (1, light_pdf)
+                          in vec3.scale (weight / pdf) (f vec3.* in_radiance) )
   in (rng, light_radiance vec3.+ bsdf_radiance)
 
 -- Compute the direct radiance by stochastically sampling one light,
@@ -217,12 +221,16 @@ let color (r: ray) (scene: accel_scene) (rng: rnge)
                             vec3.+ if !has_bounced then h.mat.emission
                                                    else mkvec3 0 0 0
              let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
-             let cosFalloff = f32.abs (vec3.dot h.normal wi)
-             let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
-             let r = mkray_adjust_acne h wi
+             let pdf = match pdf
+                       case #impossible -> 0
+                       case #delta -> 1
+                       case #nonzero x -> x
              in if pdf == 0
                 then finish radiance
-                else (radiance, throughput, r, true, rng)
+                else let cosFalloff = f32.abs (vec3.dot h.normal wi)
+                     let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
+                     let r = mkray_adjust_acne h wi
+                     in  (radiance, throughput, r, true, rng)
            case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
