@@ -53,7 +53,6 @@ let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
   let v = lightp vec3.- h.pos
   let w = vec3.normalise v
   let eps = 0.01
-  -- TODO: This is wrong for refraction out of an object, right?
   in vec3.dot w h.normal <= 0
      || (let distance = vec3.norm v
          let r = mkray_adjust_acne h w
@@ -121,7 +120,7 @@ let sample_arealight (rng: rnge) (h: hit) (l: arealight)
       (rng, { pos = mkvec3 0 0 0
             , wi = mkvec3 0 0 0
             , in_radiance = mkvec3 0 0 0
-            , pdf = 1 })
+            , pdf = 0 })
 
 let sample_light (rng: rnge) (h: hit) (l: light) (objs: xbvh.bvh)
                : (rnge, light_sample) =
@@ -179,10 +178,12 @@ let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
 -- Basically equivalent to `UniformSampleOneLight` of PBR Book 14.3.
 let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (scene: accel_scene)
                   : (rnge, vec3) =
-  let (rng, l) = random_select rng scene.lights
-  let (rng, radiance) = estimate_direct rng wo h l scene.objs
-  let n_lights = f32.i32 (length scene.lights)
-  in (rng, vec3.scale n_lights radiance)
+  if null scene.lights
+  then (rng, mkvec3 0 0 0)
+  else let (rng, l) = random_select rng scene.lights
+       let (rng, radiance) = estimate_direct rng wo h l scene.objs
+       let light_pdf = 1 / f32.i32 (length scene.lights)
+       in (rng, vec3.scale (1 / light_pdf) radiance)
 
 let color (r: ray) (scene: accel_scene) (rng: rnge)
         : vec3 =
@@ -211,11 +212,10 @@ let color (r: ray) (scene: accel_scene) (rng: rnge)
              let rng = advance_rng rng
              let wo = vec3_neg r.dir
              let (rng, direct_radiance) = direct_radiance rng wo h scene
-             let radiance = radiance vec3.+ throughput vec3.*
-               (direct_radiance
-                vec3.+ if !has_bounced
-                       then h.mat.emission
-                       else mkvec3 0 0 0)
+             let radiance = radiance
+                            vec3.+ throughput vec3.* direct_radiance
+                            vec3.+ if !has_bounced then h.mat.emission
+                                                   else mkvec3 0 0 0
              let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
              let cosFalloff = f32.abs (vec3.dot h.normal wi)
              let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)

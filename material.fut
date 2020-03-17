@@ -214,10 +214,6 @@ let beckmann_alpha (roughness: f32): f32 =
   --    + 0.0171201 * x * x * x
   --    + 0.000640711 * x * x * x * x
 
-let microfacet_distribution_pdf (wh: vec3) (m: material): f32 =
-  let alpha = beckmann_alpha m.roughness
-  in microfacet_distribution alpha wh * f32.abs (cos_theta wh)
-
 -- D * G in literature. Implementation of the Beckmann–Spizzichino
 -- model, based on PBR Book 8.4.2 & 8.4.3
 let microfacet_factor (wo: vec3) (wi: vec3) (m: material): f32 =
@@ -243,6 +239,10 @@ let spherical_direction (sin_theta: f32) (cos_theta: f32) (phi: f32): vec3 =
          (sin_theta * f32.sin phi)
          cos_theta
 
+let dielectric_reflection_wh_pdf (wh: vec3) (m: material): f32 =
+  let alpha = beckmann_alpha m.roughness
+  in microfacet_distribution alpha wh * f32.abs (cos_theta wh)
+
 -- Sample a halfway-vector from the visible Beckmann-Spizzichino
 -- distribution.
 --
@@ -267,7 +267,7 @@ let dielectric_reflection_pdf (wo: vec3) (wi: vec3) (m: material): f32 =
   if !(same_hemisphere wo wi)
   then 0
   else let wh = vec3.normalise (wo vec3.+ wi)
-       in microfacet_distribution_pdf wh m / (4 * vec3.dot wo wh)
+       in dielectric_reflection_wh_pdf wh m / (4 * vec3.dot wo wh)
 
 -- PBR Book 14.1.1
 let dielectric_reflection_sample_dir (wo: vec3) (m: material) (rng: rnge)
