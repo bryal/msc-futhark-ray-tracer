@@ -1,0 +1,101 @@
+digraph G {
+	graph [compound = true];
+
+	label = "Futhark raytracer\nGray = C/Rust, White = Futhark"
+
+	node [shape = "box", style = "rounded,filled"]
+	main;
+
+	node [shape = "box", style = "filled"]
+	load_obj_data, "Create SDL window";
+	handle_input [label = "Handle keyboard events"];
+	blit [label = "Blit received RGB data to SDL window"];
+
+	subgraph cluster_init {
+		label = "init";
+
+		dummy_init [shape = point, style = "invis"];
+
+		node [shape = "box", style = "rounded"]
+		"Return initialized state";
+
+		node [shape = "box", style = ""];
+		"Parse input data", "Find light sources", "Build BVH";
+	}
+
+	subgraph cluster_step {
+		label = "step";
+
+		node [shape = "box", style = "rounded"];
+		step_start [label = "start"];
+		"Return current accumulation";
+
+		subgraph cluster_sample {
+			label = "Sample pixel";
+
+			dummy_sample [shape = point, style = "invis"];
+
+			node [shape = "box", style = ""]
+			"Sample a point within pixel", "Create ray from eye to point";
+
+			subgraph cluster_pathtrace {
+				label = "Pathtrace ray in scene. radiance = 0, throughput = 1";
+
+				node [shape = "box", style = "rounded"];
+				pathtrace_start [label = "start"];
+				terminate [label = "Terminate, returning radiance"];
+
+				node [shape = "diamond", style = ""]
+				pathtrace_rr [label = "Russian roulette"];
+				closest_hit [label = "Find closest ray-scene intersection"];
+
+				node [shape = "box", style = ""];
+				scale_through [label = "Scale throughput by 1/probability"];
+				add_direct [label = "radiance += throughput * sample direct illumination"];
+				sample_bsdf [label = "Sample scatter direction based on surface hit\n(Exitant direction, reflectance, roughness, etc)"];
+				attenuate_through [label = "Attenuate throughput based on junction properties\n(Incident angle, absorbtion, etc)"];
+				mk_scatter_ray [label = "ray = from hit along scatter direction"];
+			}
+		}
+	}
+
+	subgraph cluster_render {
+		label = "render";
+
+		dummy_render [shape = point, style = "invis"];
+
+		node [shape = "box", style = "rounded"]
+		"Return RGB color data";
+
+		node [shape = "box", style = ""];
+		"Convert to displayable representation"
+	}
+
+	main -> load_obj_data;
+	load_obj_data -> dummy_init [lhead = cluster_init];
+	dummy_init -> "Create SDL window" [ltail = cluster_init];
+	"Create SDL window" -> step_start [lhead = cluster_step];
+	step_start -> dummy_render [ltail = cluster_step, lhead = cluster_render];
+	dummy_render -> blit [ltail = cluster_render];
+	blit -> handle_input;
+	handle_input -> step_start [lhead = cluster_step];
+
+	"Parse input data" -> "Find light sources" -> "Build BVH" -> "Return initialized state";
+
+	step_start -> "Sample a point within pixel" [label = "For each pixel", lhead = cluster_sample];
+	"Sample a point within pixel" -> "Return current accumulation" [ltail = cluster_sample];
+
+	"Convert to displayable representation" -> "Return RGB color data";
+
+	"Sample a point within pixel" -> "Create ray from eye to point";
+	"Create ray from eye to point" -> pathtrace_start [lhead = cluster_pathtrace];
+
+	pathtrace_start -> pathtrace_rr;
+	pathtrace_rr -> terminate [label = "10%"];
+	pathtrace_rr -> scale_through [label = "90%"];
+	scale_through -> closest_hit;
+	closest_hit -> terminate [label = "No hit"];
+	closest_hit -> add_direct [label = "Some hit"];
+	add_direct -> sample_bsdf -> attenuate_through -> mk_scatter_ray;
+	mk_scatter_ray -> pathtrace_rr [label = "Loop with updated radiance, throughput, ray\n(Computes indirect illumination)"];
+}
