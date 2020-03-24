@@ -50,10 +50,20 @@ let vec3_neg ({ x, y, z }: vec3): vec3 = { x = -x, y = -y, z = -z }
 let vec3_from_array (xs: [3]f32): vec3 =
   { x = xs[0], y = xs[1], z = xs[2] }
 
+let vec3_lerp (a: vec3) (b: vec3) (r: f32): vec3 =
+  vec3.scale (1 - r) a vec3.+ vec3.scale r b
+
+-- If necessary, flip `w` around to face the same side as `dominant`.
+let same_side (dominant: vec3) (w: vec3): vec3 =
+  vec3.scale (f32.sgn (vec3.dot dominant w)) w
+
 let clamp ((min, max): (f32, f32)) (x: f32): f32 =
   f32.max min (f32.min max x)
 
 let error_vec: vec3 = mkvec3 1000 0 1000
+
+let map_fst 'a 'b 'c (f: a -> c) (x: a, y: b): (c, b) = (f x, y)
+let map_snd 'a 'b 'c (f: b -> c) (x: a, y: b): (a, c) = (x, f y)
 
 -- [0, 1)
 let random_unit_exclusive (rng: rnge): (rnge, f32) =
@@ -73,6 +83,16 @@ let random_in_unit_square (rng: rnge): (rnge, (f32, f32)) =
   let (rng, x) = random_unit_exclusive rng
   let (rng, y) = random_unit_exclusive rng
   in (rng, (x, y))
+
+-- PBR Book 13.6.5
+let random_in_triangle (rng: rnge): (rnge, (f32, f32)) =
+  let (rng, (u, v)) = random_in_unit_square rng
+  let su = f32.sqrt u
+  in (rng, (1 - su, v * su))
+
+let random_select [n] 'a (rng: rnge) (xs: [n]a): (rnge, a) =
+  let (rng, n) = rnge.rand rng
+  in (rng, unsafe xs[i32.u32 (n % u32.i32 (length xs))])
 
 let world_up: vec3 = mkvec3 0 1 0
 

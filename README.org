@@ -1,0 +1,55 @@
+#+TITLE: Sensor simulator ray-tracer
+
+in [[https://futhark-lang.org/][Futhark]]
+
+* Dependencies
+  Regardless of platform, first [[https://futhark.readthedocs.io/en/latest/installation.html][install Futhark]].
+
+** SDL2
+   On Linux, statically compiled SDL2 is included in [[deps/SDL2/]].
+
+   On Windows you'll have to install SDL2 yourself. Using MSYS2
+   (mingw) is recommended (yay pacman!). You may have to update your
+   environment variables so that the linker can find the installed
+   libraries.
+
+** OpenCL
+   You'll need both the libraries and headers for compilation, and
+   drivers with support at runtime.
+
+   On Linux, simply install the appropriate package (something like
+   "opencl-dev") to get the development library. Depending on your
+   distribution and hardware, your drivers may be OpenCL ready out of
+   the box. Otherwise you must install packages that provide an OpenCL
+   runtime (and an ICD loader?).
+
+   On Windows, get an OpenCL SDK (preferably a "light" version) from
+   your GPU vendor -- for AMD, [[https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases][you can find it here]]. With regards to
+   runtime, you should be good to go as long as you've installed the
+   normal GPU drivers for your system.
+
+* Build
+  Simply run ~make~. If it doesn't work, try poking around in the
+  Makefile. You may need to change ~CC=clang~ to ~CC=gcc~ for example.
+
+* Run
+  On Linux, run with ~./main~. On Windows, use just ~main.exe~ instead.
+
+  #+BEGIN_EXAMPLE
+  $ ./main -o assets/CornellBox-Sphere.obj
+  Using OpenCL device: Ellesmere
+  Use -d or -i to change this.
+  no of triangles: 2188
+  #+END_EXAMPLE
+
+** Controls
+   For the interactive demo:
+
+   - w, a, s, d, x, z :: Translation.
+   - Arrow keys :: Rotation.
+   - 1, 2 :: Increase / decrease resolution.
+   - q, e :: Decrease / increase samples per (virtual) pixel.
+   - SPACE :: Toggle accumulation.
+   - n, m :: Disable / enable accumulation.
+   - i, k :: Increase / decrease aperture size.
+   - o, l :: Increase / decrease focal distance.

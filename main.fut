@@ -9,6 +9,20 @@ module xbvh = lbvh
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
 
+type arealight = { geom: geom, emission: vec3 }
+
+type light = #pointlight { pos: vec3, emission: vec3 }
+           | #arealight arealight
+
+type~ scene =
+  { objs: []obj
+  , mats: []material }
+
+type~ accel_scene =
+  { objs: xbvh.bvh
+  , mats: []material
+  , lights: []light }
+
 type~ state = { time: f32
               , dimensions: (u32, u32)
               , subsampling: u32
@@ -18,8 +32,7 @@ type~ state = { time: f32
               , n_frames: u32
               , mode: bool
               , cam: camera
-              , mats: []material
-              , world: []obj }
+              , scene: accel_scene }
 
 let vcol_to_argb (c: vec3): argb.colour =
   argb.from_rgba c.x c.y c.z 1f32
@@ -27,27 +40,165 @@ let vcol_to_argb (c: vec3): argb.colour =
 let advance_rng (rng: rnge): rnge =
   let (rng, _) = dist.rand (0,1) rng in rng
 
+-- Create a ray from a point in a direction, fix for surface acne
 let mkray_adjust_acne (h: hit) (wi: vec3): ray =
-  -- Fix surface acne
-  --
-  -- NOTE: Don't just walk along `wi`, because then we get
+  -- Note that we don't just walk along `wi`, because then we get
   -- strange artifacts for some materials at extreme angles.
   let eps = 0.001
-  let face_forward_normal = if vec3.dot wi h.normal >= 0
-                            then h.normal
-                            else vec3_neg h.normal
-  let acne_offset = vec3.scale eps face_forward_normal
+  let acne_offset = vec3.scale eps (same_side wi h.normal)
   in mkray (h.pos vec3.+ acne_offset) wi
 
-let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
+let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
+           : bool =
+  let v = lightp vec3.- h.pos
+  let w = vec3.normalise v
+  let eps = 0.01
+  in vec3.dot w h.normal <= 0
+     || (let distance = vec3.norm v
+         let r = mkray_adjust_acne h w
+         in xbvh.any_hit (distance - eps) r objs)
+
+type light_sample = { pos: vec3, wi: vec3, in_radiance: vec3, pdf: f32 }
+
+let trianglelight_incident_radiance (hitp: vec3) (lightp: vec3) (t: triangle) (emission: vec3): vec3 =
+  let (wi, distance_sq) =
+    let v = lightp vec3.- hitp
+    in (vec3.normalise v, vec3.quadrance v)
+  let (e1, e2) = (t.b vec3.- t.a, t.c vec3.- t.a)
+  let lnormal = vec3.normalise (vec3.cross e1 e2)
+  let cos_theta_l = vec3.dot (vec3_neg wi) lnormal
+  in vmax (mkvec3 0 0 0)
+          (vec3.scale (cos_theta_l / distance_sq) emission)
+
+let arealight_incident_radiance (hitp: vec3) (lightp: vec3) (light: arealight): vec3 =
+  match light.geom
+  case #triangle t -> trianglelight_incident_radiance hitp lightp t light.emission
+  case #sphere _ -> mkvec3 0 0 0
+
+let light_incident_radiance (hitp: vec3) (lightp: vec3) (light: light): vec3 =
+  match light
+  case #pointlight _ -> mkvec3 0 0 0 -- Delta distribution. Must be handled specially
+  case #arealight l -> arealight_incident_radiance hitp lightp l
+
+let triangle_area (t: triangle): f32 =
+  let e1 = t.b vec3.- t.a
+  let e2 = t.c vec3.- t.a
+  in vec3.norm (vec3.cross e1 e2) / 2
+
+let arealight_pdf (l: arealight): f32 =
+  match l.geom
+  case #sphere _ -> 0
+  case #triangle t -> 1 / triangle_area t
+
+let light_pdf (l: light): f32 =
+  match l
+  case #pointlight _ -> 0
+  case #arealight a -> arealight_pdf a
+
+let sample_pointlight (h: hit) (pos: vec3) (emission: vec3)
+                    : light_sample =
+  let (wi, distance_sq) =
+    let v = pos vec3.- h.pos
+    in (vec3.normalise v, vec3.quadrance v)
+  let in_radiance = vec3.scale (1 / distance_sq) emission
+  in { pos, wi, in_radiance, pdf = 1 }
+
+let sample_arealight (rng: rnge) (h: hit) (l: arealight)
+                   : (rnge, light_sample) =
+    match l.geom
+    case #triangle t ->
+      let e1 = t.b vec3.- t.a
+      let e2 = t.c vec3.- t.a
+      let area = vec3.norm (vec3.cross e1 e2) / 2
+      let (_rng, (u, v)) = random_in_triangle rng
+      let p = t.a vec3.+ vec3.scale u e1 vec3.+ vec3.scale v e2
+      let wi = vec3.normalise (p vec3.- h.pos)
+      let in_radiance = trianglelight_incident_radiance h.pos p t l.emission
+      in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
+    -- TODO
+    case #sphere _ ->
+      (rng, { pos = mkvec3 0 0 0
+            , wi = mkvec3 0 0 0
+            , in_radiance = mkvec3 0 0 0
+            , pdf = 0 })
+
+let sample_light (rng: rnge) (h: hit) (l: light) (objs: xbvh.bvh)
+               : (rnge, light_sample) =
+  let (rng, light_sample) =
+    match l
+    case #pointlight { pos, emission } ->
+      (rng, sample_pointlight h pos emission)
+    case #arealight a ->
+      sample_arealight rng h a
+  in (rng, if occluded h light_sample.pos objs
+           then light_sample with in_radiance = mkvec3 0 0 0
+           else light_sample)
+
+-- The Balance heuristic of Multiple Importance Sampling
+let balance_heuristic (nf: u32, pdf_f: f32) (ng: u32, pdf_g: f32): f32 =
+  let (nf, ng) = (f32.u32 nf, f32.u32 ng)
+  in nf * pdf_f / (nf * pdf_f + ng * pdf_g)
+
+-- Estimate direct light contribution using Multiple Importance Sampling.
+let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
+                  : (rnge, vec3) =
+  -- Sample light with MIS
+  let (rng, light_radiance) =
+    let (rng, { pos = _, wi, in_radiance, pdf }) = sample_light rng h l objs
+    in if pdf == 0 || in_radiance == mkvec3 0 0 0
+       then (rng, mkvec3 0 0 0)
+       else let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) (bsdf_f wo wi h)
+            let scattering_pdf = bsdf_pdf wo wi h
+            let weight = balance_heuristic (1, pdf) (1, scattering_pdf)
+            in (rng, vec3.scale (weight / pdf) (f vec3.* in_radiance))
+  -- Sample BSDF with MIS
+  let (rng, bsdf_radiance) =
+    match l
+    case #pointlight _ -> (rng, mkvec3 0 0 0)
+    case #arealight l ->
+      let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
+      in ( rng
+         , let r = mkray_adjust_acne h wi
+           in match hit_geom f32.highest r l.geom
+              case #nothing -> mkvec3 0 0 0
+              case #just lh ->
+                if occluded h lh.pos objs
+                then mkvec3 0 0 0
+                else let in_radiance = arealight_incident_radiance h.pos lh.pos l
+                     let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) bsdf
+                     in match pdf
+                        case #impossible -> mkvec3 0 0 0
+                        case #delta -> f vec3.* in_radiance
+                        case #nonzero pdf ->
+                          let light_pdf = arealight_pdf l
+                          let weight = balance_heuristic (1, pdf) (1, light_pdf)
+                          in vec3.scale (weight / pdf) (f vec3.* in_radiance) )
+  in (rng, light_radiance vec3.+ bsdf_radiance)
+
+-- Compute the direct radiance by stochastically sampling one light,
+-- taking the reflection direction into account with Multiple
+-- Importance Sampling to eliminate fireflies and get caustics.
+--
+-- Basically equivalent to `UniformSampleOneLight` of PBR Book 14.3.
+let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (scene: accel_scene)
+                  : (rnge, vec3) =
+  if null scene.lights
+  then (rng, mkvec3 0 0 0)
+  else let (rng, l) = random_select rng scene.lights
+       let (rng, radiance) = estimate_direct rng wo h l scene.objs
+       let light_pdf = 1 / f32.i32 (length scene.lights)
+       in (rng, vec3.scale (1 / light_pdf) radiance)
+
+let color (r: ray) (scene: accel_scene) (rng: rnge)
         : vec3 =
   let tmax = f32.highest
-  let sky = mkvec3 0.8 0.9 1.0
+  let sky = mkvec3 0.3 0.2 0.4
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
     let choked_throughput = mkvec3 0 0 0
-    let (arbitrary_ray, arbitrary_rng) = (r, rng)
-    in (radiance, choked_throughput, arbitrary_ray, arbitrary_rng)
+    -- Arbitrary values
+    let (a_ray, a_bounced, a_rng) = (r, true, rng)
+    in (radiance, choked_throughput, a_ray, a_bounced, a_rng)
   -- Russian roulette termination. Instead of absolutely cutting off
   -- the "recursion" after N bounces, keep going with some probability
   -- and weight the samples appropriately. When we do it like this,
@@ -56,22 +207,30 @@ let color (r: ray) (world: xbvh.bvh) (mats: []material) (rng: rnge)
   let p_termination = 0.1
   let roulette_terminate rng = (random_unit_exclusive rng).1 < p_termination
   in (.0) <|
-     loop (radiance, throughput, r, rng) =
-          (mkvec3 0 0 0, mkvec3 1 1 1, r, rng)
+     loop (radiance, throughput, r, has_bounced, rng) =
+          (mkvec3 0 0 0, mkvec3 1 1 1, r, false, rng)
      while vec3.norm throughput > 0.001 && !(roulette_terminate rng)
      do let throughput = vec3.scale (1 / (1 - p_termination)) throughput
-        in match xbvh.closest_hit tmax r mats world
+        in match xbvh.closest_hit tmax r scene.mats scene.objs
            case #just h ->
              let rng = advance_rng rng
-             let radiance = radiance vec3.+ (throughput vec3.* h.mat.emission)
              let wo = vec3_neg r.dir
+             let (rng, direct_radiance) = direct_radiance rng wo h scene
+             let radiance = radiance
+                            vec3.+ throughput vec3.* direct_radiance
+                            vec3.+ if !has_bounced then h.mat.emission
+                                                   else mkvec3 0 0 0
              let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
-             let cosFalloff = f32.abs (vec3.dot h.normal wi)
-             let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
-             let r = mkray_adjust_acne h wi
+             let pdf = match pdf
+                       case #impossible -> 0
+                       case #delta -> 1
+                       case #nonzero x -> x
              in if pdf == 0
-                then finish (mkvec3 0 0 0)
-                else (radiance, throughput, r, rng)
+                then finish radiance
+                else let cosFalloff = f32.abs (vec3.dot h.normal wi)
+                     let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
+                     let r = mkray_adjust_acne h wi
+                     in  (radiance, throughput, r, true, rng)
            case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
@@ -99,9 +258,8 @@ let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale coord.y vertical
             vec3.- origin)
 
-let sample (world: xbvh.bvh)
+let sample (scene: accel_scene)
            (cam: camera)
-           (mats: []material)
            (w: f32, h: f32)
            (j: u32, i: u32)
            (offset: vec2)
@@ -112,10 +270,20 @@ let sample (world: xbvh.bvh)
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
   let r = get_ray cam ratio xy rng
-  in color r world mats rng
+  in color r scene rng
+
+let get_lights ({ objs, mats }: scene): []light =
+  let with_emission obj =
+    { geom = obj.geom
+    , emission = (unsafe mats[i32.u32 obj.mat_ix]).emission }
+  in map (\l -> #arealight l)
+     <| filter ((> 0) <-< vec3.norm <-< (.emission))
+     <| map with_emission objs
+
+let accelerate_scene (s: scene): accel_scene =
+  { objs = xbvh.build s.objs, mats = s.mats, lights = get_lights s }
 
 let sample_all (s: state): (rnge, [][]vec3) =
-  let world_bvh = xbvh.build s.world
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
@@ -127,9 +295,8 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let (rng, offset_x) = dist.rand (0,1) rng
     let (rng, offset_y) = dist.rand (0,1) rng
     let offset = mkvec2 offset_x offset_y
-    in (vec3./) (sample world_bvh
+    in (vec3./) (sample s.scene
                         s.cam
-                        s.mats
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
                         offset rng)
@@ -189,19 +356,23 @@ module lys: lys with text_content = text_content = {
            (tri_mats: []u32)
            (mat_data: [][10]f32)
          : state =
-    { time = 0
-    , dimensions = (w, h)
-    , subsampling = 2
-    , rng = minstd_rand.rng_from_seed [123]
-    , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
-    , samples = 1
-    , n_frames = 1
-    , mode = false
-    , cam = { pitch = 0.0, yaw = 0.0
-            , origin = mkvec3 0 0.8 1.8
-            , aperture = 0.0, focal_dist = 1.5 }
-    , mats = parse_mats mat_data
-    , world = parse_triangles tri_geoms tri_mats }
+    let raw_scene =
+      { objs = parse_triangles tri_geoms tri_mats
+      , mats = parse_mats mat_data }
+    in { time = 0
+       , dimensions = (w, h)
+       , subsampling = 2
+       , rng = minstd_rand.rng_from_seed [123]
+       , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
+       , samples = 1
+       , n_frames = 1
+       , mode = false
+       , cam = { pitch = 0.0
+               , yaw = 0.0
+               , origin = mkvec3 0 0.8 1.8
+               , aperture = 0.0
+               , focal_dist = 1.5 }
+       , scene = accelerate_scene raw_scene }
 
   let resize (h: u32) (w: u32) (s: state) =
     s with dimensions = (w, h) with mode = false
@@ -250,6 +421,10 @@ module lys: lys with text_content = text_content = {
         then s with cam = move_camera s.cam (mkvec3 0 (-1) 0)
         else if key == SDLK_SPACE
         then s with mode = !s.mode
+        else if key == SDLK_n
+        then s with mode = false
+        else if key == SDLK_m
+        then s with mode = true
         else if key == SDLK_i
         then s with cam =
           (s.cam with aperture = f32.min 2 (s.cam.aperture + 0.08))
@@ -276,10 +451,8 @@ module lys: lys with text_content = text_content = {
 
   type text_content = text_content
 
-  let text_content (render_duration: f32) (s: state): text_content =
-    let rd = if s.mode then 0 else u32.f32 render_duration
-    in ( rd, s.samples, s.n_frames , s.cam.aperture, s.cam.focal_dist,
-      s.subsampling )
+  let text_content (fps: f32) (s: state): text_content =
+    (u32.f32 fps, s.samples, s.n_frames , s.cam.aperture, s.cam.focal_dist, s.subsampling )
 
   let text_colour = const argb.yellow
 }
