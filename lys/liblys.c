@@ -449,11 +449,36 @@ void init_sdl(struct lys_context *ctx, char* font_path) {
     SDL_ASSERT(ctx->font != NULL);
 }
 
-int main(int argc, char** argv) {
+char* stradd(const char* a, const char* b) {
+    char* c = malloc(sizeof(char) * (strlen(a) + strlen(b) + 1));
+    strcpy(c, a);
+    strcat(c, b);
+    return c;
+}
+
+int main(int argc, char* argv[]) {
     uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT;
     bool allow_resize = true;
     char *deviceopt = NULL;
     int interactive = 0;
+
+    char* parent_dir;
+    {
+	char* executable_path = argv[0];
+        char* last_slash = strrchr(executable_path, '/');
+        if (!last_slash) {
+            // Windows
+            last_slash = strrchr(executable_path, '\\');
+        }
+        if (last_slash) {
+            size_t after_slash_i = (size_t)(last_slash + 1 - executable_path);
+            parent_dir = malloc(sizeof(char) * (after_slash_i + 1));
+            strncpy(parent_dir, executable_path, after_slash_i);
+            parent_dir[after_slash_i] = '\0';
+        } else {
+            parent_dir = "";
+        }
+    }
 
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
         printf("Usage: %s options...\n", argv[0]);
@@ -469,8 +494,8 @@ int main(int argc, char** argv) {
     }
 
     int c;
-    char* obj_path = "assets/CornellBox-Original.obj";
-    while ( (c = getopt(argc, argv, "w:h:Rd:i:o:")) != -1) {
+    char* obj_path = stradd(parent_dir, "assets/CornellBox-Original.obj");
+    while ( (c = getopt(argc, argv, "w:h:Rd:io:")) != -1) {
         switch (c) {
         case 'w':
             width = (uint32_t)atoi(optarg);
@@ -514,15 +539,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    char font_path_rel[] = "/lys/Inconsolata-Regular.ttf";
-    char* font_path = malloc(sizeof(char) * strlen(argv[0]) + sizeof(font_path_rel));
-    assert(font_path != NULL);
-    strcpy(font_path, argv[0]);
-    char *last_dash = strrchr(font_path, '/');
-    if (last_dash != NULL) {
-        *last_dash = '\0';
-    }
-    strcat(font_path, font_path_rel);
+    char* font_path = stradd(parent_dir, "lys/Inconsolata-Regular.ttf");
 
     struct lys_context ctx;
     memset(&ctx, 0, sizeof(struct lys_context));
