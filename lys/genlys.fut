@@ -12,7 +12,7 @@ entry init (seed: u32)
            (h: u32) (w: u32)
            (tri_geoms: [][3][3]f32)
            (tri_mats: []u32)
-           (mat_data: [][10]f32)
+           (mat_data: [][28]f32)
          : state = m.lys.init seed h w tri_geoms tri_mats mat_data
 
 entry resize (h: u32) (w: u32) (s: state): state = m.lys.resize h w s

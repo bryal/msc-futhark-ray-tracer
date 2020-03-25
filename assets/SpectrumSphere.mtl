@@ -1,0 +1,46 @@
+# The sphere Cornell Box as seen in Henrik Jensen's
+# "Realistic Image Synthesis Using Photon Mapping" (Page 107 Fig. 9.10) in OBJ format.
+# Note that the real box is not a perfect cube, so
+# the faces are imperfect in this data set.
+#
+# Created by Guedis Cardenas and Morgan McGuire at Williams College, 2011
+# Released into the Public Domain.
+#
+# http://graphics.cs.williams.edu/data
+# http://www.graphics.cornell.edu/online/box/data.html
+# http://www.cs.cmu.edu/~djames/15-864/pics/cornellBox.jpg
+#
+
+
+# Mirror
+newmtl leftSphere
+Sp 500 1
+Pr 0.0
+Pm 1.0
+Ni 10.0
+
+# Glass
+newmtl rightSphere
+Sp 500 0
+Pr 0.0
+Pm 0.0
+Tf 0.0
+Ni 1.7
+
+newmtl floor
+Sp 700 0.725  500 0.710  400 0.680
+
+newmtl ceiling
+Sp 700 0.725  500 0.710  400 0.680
+
+newmtl backWall
+Sp 700 0.725  500 0.710  400 0.680
+
+newmtl rightWall
+Sp 700 0.161  500 0.133  400 0.427
+
+newmtl leftWall
+Sp 700 0.630  500 0.065  400 0.050
+
+newmtl light
+Em 700 20  500 20  400 20

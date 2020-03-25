@@ -9,9 +9,9 @@ module xbvh = lbvh
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
 
-type arealight = { geom: geom, emission: vec3 }
+type arealight = { geom: geom, emission: spectrum }
 
-type light = #pointlight { pos: vec3, emission: vec3 }
+type light = #pointlight { pos: vec3, emission: spectrum }
            | #arealight arealight
 
 type~ scene =
@@ -58,27 +58,27 @@ let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
          let r = mkray_adjust_acne h w
          in xbvh.any_hit (distance - eps) r objs)
 
-type light_sample = { pos: vec3, wi: vec3, in_radiance: vec3, pdf: f32 }
+type light_sample = { pos: vec3, wi: vec3, in_radiance: f32, pdf: f32 }
 
-let trianglelight_incident_radiance (hitp: vec3) (lightp: vec3) (t: triangle) (emission: vec3): vec3 =
+let trianglelight_incident_radiance (hitp: vec3) (lightp: vec3) (t: triangle) (wavelen: f32) (emission: spectrum): f32 =
   let (wi, distance_sq) =
     let v = lightp vec3.- hitp
     in (vec3.normalise v, vec3.quadrance v)
   let (e1, e2) = (t.b vec3.- t.a, t.c vec3.- t.a)
   let lnormal = vec3.normalise (vec3.cross e1 e2)
   let cos_theta_l = vec3.dot (vec3_neg wi) lnormal
-  in vmax (mkvec3 0 0 0)
-          (vec3.scale (cos_theta_l / distance_sq) emission)
+  in f32.max 0
+             (spectrum_lookup wavelen emission * cos_theta_l / distance_sq)
 
-let arealight_incident_radiance (hitp: vec3) (lightp: vec3) (light: arealight): vec3 =
+let arealight_incident_radiance (hitp: vec3) (lightp: vec3) (wavelen: f32) (light: arealight): f32 =
   match light.geom
-  case #triangle t -> trianglelight_incident_radiance hitp lightp t light.emission
-  case #sphere _ -> mkvec3 0 0 0
+  case #triangle t -> trianglelight_incident_radiance hitp lightp t wavelen light.emission
+  case #sphere _ -> 0
 
-let light_incident_radiance (hitp: vec3) (lightp: vec3) (light: light): vec3 =
+let light_incident_radiance (hitp: vec3) (lightp: vec3) (wavelen: f32) (light: light): f32 =
   match light
-  case #pointlight _ -> mkvec3 0 0 0 -- Delta distribution. Must be handled specially
-  case #arealight l -> arealight_incident_radiance hitp lightp l
+  case #pointlight _ -> 0 -- Delta distribution. Must be handled specially
+  case #arealight l -> arealight_incident_radiance hitp lightp wavelen l
 
 let triangle_area (t: triangle): f32 =
   let e1 = t.b vec3.- t.a
@@ -95,15 +95,15 @@ let light_pdf (l: light): f32 =
   case #pointlight _ -> 0
   case #arealight a -> arealight_pdf a
 
-let sample_pointlight (h: hit) (pos: vec3) (emission: vec3)
+let sample_pointlight (h: hit) (pos: vec3) (wavelen: f32) (emission: spectrum)
                     : light_sample =
   let (wi, distance_sq) =
     let v = pos vec3.- h.pos
     in (vec3.normalise v, vec3.quadrance v)
-  let in_radiance = vec3.scale (1 / distance_sq) emission
+  let in_radiance = spectrum_lookup wavelen emission / distance_sq
   in { pos, wi, in_radiance, pdf = 1 }
 
-let sample_arealight (rng: rnge) (h: hit) (l: arealight)
+let sample_arealight (rng: rnge) (h: hit) (wavelen: f32) (l: arealight)
                    : (rnge, light_sample) =
     match l.geom
     case #triangle t ->
@@ -113,25 +113,25 @@ let sample_arealight (rng: rnge) (h: hit) (l: arealight)
       let (_rng, (u, v)) = random_in_triangle rng
       let p = t.a vec3.+ vec3.scale u e1 vec3.+ vec3.scale v e2
       let wi = vec3.normalise (p vec3.- h.pos)
-      let in_radiance = trianglelight_incident_radiance h.pos p t l.emission
+      let in_radiance = trianglelight_incident_radiance h.pos p t wavelen l.emission
       in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
     -- TODO
     case #sphere _ ->
       (rng, { pos = mkvec3 0 0 0
             , wi = mkvec3 0 0 0
-            , in_radiance = mkvec3 0 0 0
+            , in_radiance = 0
             , pdf = 0 })
 
-let sample_light (rng: rnge) (h: hit) (l: light) (objs: xbvh.bvh)
+let sample_light (rng: rnge) (h: hit) (wavelen: f32) (l: light) (objs: xbvh.bvh)
                : (rnge, light_sample) =
   let (rng, light_sample) =
     match l
     case #pointlight { pos, emission } ->
-      (rng, sample_pointlight h pos emission)
+      (rng, sample_pointlight h pos wavelen emission)
     case #arealight a ->
-      sample_arealight rng h a
+      sample_arealight rng h wavelen a
   in (rng, if occluded h light_sample.pos objs
-           then light_sample with in_radiance = mkvec3 0 0 0
+           then light_sample with in_radiance = 0
            else light_sample)
 
 -- The Balance heuristic of Multiple Importance Sampling
@@ -140,62 +140,69 @@ let balance_heuristic (nf: u32, pdf_f: f32) (ng: u32, pdf_g: f32): f32 =
   in nf * pdf_f / (nf * pdf_f + ng * pdf_g)
 
 -- Estimate direct light contribution using Multiple Importance Sampling.
-let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (l: light) (objs: xbvh.bvh)
-                  : (rnge, vec3) =
+let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (wavelen: f32) (l: light) (objs: xbvh.bvh)
+                  : (rnge, f32) =
   -- Sample light with MIS
   let (rng, light_radiance) =
-    let (rng, { pos = _, wi, in_radiance, pdf }) = sample_light rng h l objs
-    in if pdf == 0 || in_radiance == mkvec3 0 0 0
-       then (rng, mkvec3 0 0 0)
-       else let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) (bsdf_f wo wi h)
-            let scattering_pdf = bsdf_pdf wo wi h
+    let (rng, { pos = _, wi, in_radiance, pdf }) = sample_light rng h wavelen l objs
+    in if pdf == 0 || in_radiance == 0
+       then (rng, 0)
+       else let f = bsdf_f wo wi h wavelen * f32.abs (vec3.dot wi h.normal)
+            let scattering_pdf = bsdf_pdf wo wi h wavelen
             let weight = balance_heuristic (1, pdf) (1, scattering_pdf)
-            in (rng, vec3.scale (weight / pdf) (f vec3.* in_radiance))
+            in (rng, f * weight * in_radiance / pdf)
   -- Sample BSDF with MIS
   let (rng, bsdf_radiance) =
     match l
-    case #pointlight _ -> (rng, mkvec3 0 0 0)
+    case #pointlight _ -> (rng, 0)
     case #arealight l ->
-      let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
+      let (rng, { wi, bsdf, pdf }) = sample_dir wo h wavelen rng
       in ( rng
          , let r = mkray_adjust_acne h wi
            in match hit_geom f32.highest r l.geom
-              case #nothing -> mkvec3 0 0 0
+              case #nothing -> 0
               case #just lh ->
                 if occluded h lh.pos objs
-                then mkvec3 0 0 0
-                else let in_radiance = arealight_incident_radiance h.pos lh.pos l
-                     let f = vec3.scale (f32.abs (vec3.dot wi h.normal)) bsdf
+                then 0
+                else let in_radiance = arealight_incident_radiance h.pos lh.pos wavelen l
+                     let f = bsdf * f32.abs (vec3.dot wi h.normal)
                      in match pdf
-                        case #impossible -> mkvec3 0 0 0
-                        case #delta -> f vec3.* in_radiance
+                        case #impossible -> 0
+                        case #delta -> f * in_radiance
                         case #nonzero pdf ->
                           let light_pdf = arealight_pdf l
                           let weight = balance_heuristic (1, pdf) (1, light_pdf)
-                          in vec3.scale (weight / pdf) (f vec3.* in_radiance) )
-  in (rng, light_radiance vec3.+ bsdf_radiance)
+                          in f * in_radiance * weight / pdf)
+  in (rng, light_radiance + bsdf_radiance)
 
 -- Compute the direct radiance by stochastically sampling one light,
 -- taking the reflection direction into account with Multiple
 -- Importance Sampling to eliminate fireflies and get caustics.
 --
 -- Basically equivalent to `UniformSampleOneLight` of PBR Book 14.3.
-let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (scene: accel_scene)
-                  : (rnge, vec3) =
+let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (wavelen: f32) (scene: accel_scene)
+                  : (rnge, f32) =
   if null scene.lights
-  then (rng, mkvec3 0 0 0)
+  then (rng, 0)
   else let (rng, l) = random_select rng scene.lights
-       let (rng, radiance) = estimate_direct rng wo h l scene.objs
+       let (rng, radiance) = estimate_direct rng wo h wavelen l scene.objs
        let light_pdf = 1 / f32.i32 (length scene.lights)
-       in (rng, vec3.scale (1 / light_pdf) radiance)
+       in (rng, radiance / light_pdf)
 
-let color (r: ray) (scene: accel_scene) (rng: rnge)
-        : vec3 =
+let color (r: ray) (wavelen: f32) (scene: accel_scene) (rng: rnge)
+        : f32 =
   let tmax = f32.highest
-  let sky = mkvec3 0.3 0.2 0.4
+  let full_sky =
+    { b0 = (700, 0.3)
+    , b1 = (500, 0.2)
+    , b2 = (400, 0.4)
+    , b3 = (-1, 0)
+    , b4 = (-1, 0)
+    , b5 = (-1, 0) }
+  let sky = spectrum_lookup wavelen full_sky
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
-    let choked_throughput = mkvec3 0 0 0
+    let choked_throughput = 0
     -- Arbitrary values
     let (a_ray, a_bounced, a_rng) = (r, true, rng)
     in (radiance, choked_throughput, a_ray, a_bounced, a_rng)
@@ -208,19 +215,19 @@ let color (r: ray) (scene: accel_scene) (rng: rnge)
   let roulette_terminate rng = (random_unit_exclusive rng).1 < p_termination
   in (.0) <|
      loop (radiance, throughput, r, has_bounced, rng) =
-          (mkvec3 0 0 0, mkvec3 1 1 1, r, false, rng)
-     while vec3.norm throughput > 0.001 && !(roulette_terminate rng)
-     do let throughput = vec3.scale (1 / (1 - p_termination)) throughput
+          (0, 1, r, false, rng)
+     while throughput > 0.001 && !(roulette_terminate rng)
+     do let throughput = throughput / (1 - p_termination)
         in match xbvh.closest_hit tmax r scene.mats scene.objs
            case #just h ->
              let rng = advance_rng rng
              let wo = vec3_neg r.dir
-             let (rng, direct_radiance) = direct_radiance rng wo h scene
+             let (rng, direct_radiance) = direct_radiance rng wo h wavelen scene
              let radiance = radiance
-                            vec3.+ throughput vec3.* direct_radiance
-                            vec3.+ if !has_bounced then h.mat.emission
-                                                   else mkvec3 0 0 0
-             let (rng, { wi, bsdf, pdf }) = sample_dir wo h rng
+                            + throughput * direct_radiance
+                            + if !has_bounced then spectrum_lookup wavelen h.mat.emission
+                                              else 0
+             let (rng, { wi, bsdf, pdf }) = sample_dir wo h wavelen rng
              let pdf = match pdf
                        case #impossible -> 0
                        case #delta -> 1
@@ -228,10 +235,10 @@ let color (r: ray) (scene: accel_scene) (rng: rnge)
              in if pdf == 0
                 then finish radiance
                 else let cosFalloff = f32.abs (vec3.dot h.normal wi)
-                     let throughput = throughput vec3.* (vec3.scale (cosFalloff / pdf) bsdf)
+                     let throughput = throughput * (bsdf * cosFalloff / pdf)
                      let r = mkray_adjust_acne h wi
-                     in  (radiance, throughput, r, true, rng)
-           case #nothing -> finish (radiance vec3.+ (throughput vec3.* sky))
+                     in (radiance, throughput, r, true, rng)
+           case #nothing -> finish (radiance + (throughput * sky))
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
@@ -269,15 +276,21 @@ let sample (scene: accel_scene)
   let ratio = w / h
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
+  let (rng, (wavelen, wavelen_to_rgb)) =
+    random_select rng [ (700, mkvec3 3 0 0)
+                      , (500, mkvec3 0 3 0)
+                      , (400, mkvec3 0 0 3) ]
   let r = get_ray cam ratio xy rng
-  in color r scene rng
+  in vec3.scale (color r wavelen scene rng) wavelen_to_rgb
 
 let get_lights ({ objs, mats }: scene): []light =
+  let nonzero_spectrum s = !(null (filter (\(w, x) -> w >= 0 && x > 0)
+                                          (spectrum_to_arr s)))
   let with_emission obj =
     { geom = obj.geom
     , emission = (unsafe mats[i32.u32 obj.mat_ix]).emission }
   in map (\l -> #arealight l)
-     <| filter ((> 0) <-< vec3.norm <-< (.emission))
+     <| filter (nonzero_spectrum <-< (.emission))
      <| map with_emission objs
 
 let accelerate_scene (s: scene): accel_scene =
@@ -325,15 +338,25 @@ let parse_triangles [t]
        , mat_ix }
   in map2 f tris tri_mats
 
-let parse_mat (m: [10]f32): material =
-  { color = mkvec3 m[0] m[1] m[2]
-  , roughness = m[3]
-  , metalness = m[4]
-  , ref_ix = m[5]
-  , opacity = m[6]
-  , emission = mkvec3 m[7] m[8] m[9] }
+let parse_mat (m: [28]f32): material =
+  { color = { b0 = (m[0] , m[1])
+            , b1 = (m[2] , m[3])
+            , b2 = (m[4] , m[5])
+            , b3 = (m[6] , m[7])
+            , b4 = (m[8] , m[9])
+            , b5 = (m[10] , m[11]) }
+  , roughness = m[12]
+  , metalness = m[13]
+  , ref_ix = m[14]
+  , opacity = m[15]
+  , emission = { b0 = (m[16] , m[17])
+               , b1 = (m[18] , m[19])
+               , b2 = (m[20] , m[21])
+               , b3 = (m[22] , m[23])
+               , b4 = (m[24] , m[25])
+               , b5 = (m[26] , m[27]) } }
 
-let parse_mats (mats: [][10]f32): []material =
+let parse_mats (mats: [][28]f32): []material =
   map parse_mat mats
 
 let upscale (full_w: i32, full_h: i32)
@@ -354,7 +377,7 @@ module lys: lys with text_content = text_content = {
            (h: u32) (w: u32)
            (tri_geoms: [][3][3]f32)
            (tri_mats: []u32)
-           (mat_data: [][10]f32)
+           (mat_data: [][28]f32)
          : state =
     let raw_scene =
       { objs = parse_triangles tri_geoms tri_mats

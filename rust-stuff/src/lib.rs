@@ -1,6 +1,7 @@
 #![feature(vec_into_raw_parts)]
 
 use std::ffi::CStr;
+use std::iter::{once, repeat};
 use std::path::Path;
 
 #[no_mangle]
@@ -35,10 +36,9 @@ pub unsafe extern "C" fn free_obj_data(tri_data: *mut f32, tri_mats: *mut u32, m
 
 fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
     let (models, materials) = tobj::load_obj(obj_path).expect("Load obj file");
-    let error_mat_ix = 0;
     let (mut tris, mut tri_mats) = (Vec::new(), Vec::new());
     for mesh in models.into_iter().map(|m| m.mesh) {
-        let mat_ix = mesh.material_id.map(|i| i + 1).unwrap_or(error_mat_ix);
+        let mat_ix = mesh.material_id.expect("Mesh doesn't have material");
         let vertices = mesh.positions.chunks(3).collect::<Vec<_>>();
         for tri_is in mesh.indices.chunks(3) {
             tri_mats.push(mat_ix as u32);
@@ -47,27 +47,53 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
             }
         }
     }
-    let error_mat = [1000.0, 0.0, 1000.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0];
-    let mut mats = vec![error_mat];
+    let mut mats = Vec::with_capacity(materials.len());
     for m in materials {
-        let color = m.diffuse;
+        let color_old = m.diffuse;
+        let color = get_spectrum(&m, "Sp").unwrap_or([
+            700.0,
+            color_old[0],
+            500.0,
+            color_old[1],
+            400.0,
+            color_old[2],
+            -1.0,
+            0.0,
+            -1.0,
+            0.0,
+            -1.0,
+            0.0,
+        ]);
         let roughness = get_scalar(&m, "Pr").unwrap_or(1.0);
         let metalness = get_scalar(&m, "Pm").unwrap_or(0.0);
         let ref_ix = m.optical_density;
         let opacity = get_scalar(&m, "Tf").unwrap_or(1.0);
-        let emission = get_vec3(&m, "Ke").unwrap_or([0.0, 0.0, 0.0]);
-        let mat = [
-            color[0],
-            color[1],
-            color[2],
-            roughness,
-            metalness,
-            ref_ix,
-            opacity,
-            emission[0],
-            emission[1],
-            emission[2],
-        ];
+        let emission_old = get_vec3(&m, "Ke").unwrap_or([0.0, 0.0, 0.0]);
+        let emission = get_spectrum(&m, "Em").unwrap_or([
+            700.0,
+            emission_old[0],
+            500.0,
+            emission_old[1],
+            400.0,
+            emission_old[2],
+            -1.0,
+            0.0,
+            -1.0,
+            0.0,
+            -1.0,
+            0.0,
+        ]);
+        let mut mat = [0.0; 28];
+        let mat_it = color
+            .iter()
+            .chain(once(&roughness))
+            .chain(once(&metalness))
+            .chain(once(&ref_ix))
+            .chain(once(&opacity))
+            .chain(emission.iter());
+        for (i, &x) in mat_it.enumerate() {
+            mat[i] = x
+        }
         mats.push(mat);
     }
     println!("no of triangles: {:?}", tris.len() / 9);
@@ -78,11 +104,14 @@ fn parse_scalar(s: &str) -> f32 {
     s.parse::<f32>().expect("Scalar parameter")
 }
 
-fn parse_vec3(s: &str) -> [f32; 3] {
-    let v = s
-        .split_whitespace()
+fn parse_vec(s: &str) -> Vec<f32> {
+    s.split_whitespace()
         .map(|t| t.parse::<f32>().unwrap())
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
+
+fn parse_vec3(s: &str) -> [f32; 3] {
+    let v = parse_vec(s);
     if v.len() != 3 {
         panic!("Expected 3-vector parameter")
     } else {
@@ -96,4 +125,16 @@ fn get_scalar(m: &tobj::Material, field: &str) -> Option<f32> {
 
 fn get_vec3(m: &tobj::Material, field: &str) -> Option<[f32; 3]> {
     m.unknown_param.get(field).map(|s| parse_vec3(&s))
+}
+
+fn get_spectrum(m: &tobj::Material, field: &str) -> Option<[f32; 12]> {
+    m.unknown_param.get(field).map(|s| {
+        let v = parse_vec(s);
+        let filler = repeat(&[-1.0, 0.0]).flat_map(|x| x);
+        let mut v12 = [0.0; 12];
+        for (i, &x) in v.iter().chain(filler).take(12).enumerate() {
+            v12[i] = x;
+        }
+        v12
+    })
 }

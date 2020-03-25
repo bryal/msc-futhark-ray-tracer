@@ -23,22 +23,6 @@ let map_maybe 'a 'b (f: a -> b) (x: maybe a): maybe b =
   case #just a -> #just (f a)
   case #nothing ->  #nothing
 
--- TODO: Don't just supply albedo for red, green, and blue. Handle
--- the whole spectrum somehow!
---
--- TODO: Make hierarchical-like and more physically based
-type material =
-  { color: vec3
-  , roughness: f32
-  , metalness: f32
-  , ref_ix: f32
-  , opacity: f32
-  , emission: vec3 }
-
-type ray = { origin: vec3, dir: vec3 }
-
-type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
-
 let mkvec3 x y z: vec3 = { x, y, z }
 
 let mkvec2 x y: vec2 = { x, y }
@@ -56,6 +40,54 @@ let vec3_lerp (a: vec3) (b: vec3) (r: f32): vec3 =
 -- If necessary, flip `w` around to face the same side as `dominant`.
 let same_side (dominant: vec3) (w: vec3): vec3 =
   vec3.scale (f32.sgn (vec3.dot dominant w)) w
+
+type spectrum = { b0: (f32, f32)
+                , b1: (f32, f32)
+                , b2: (f32, f32)
+                , b3: (f32, f32)
+                , b4: (f32, f32)
+                , b5: (f32, f32) }
+
+let spectrum_to_arr (s: spectrum) : [6](f32, f32) =
+  [ ((s.b0).0, (s.b0).1)
+  , ((s.b1).0, (s.b1).1)
+  , ((s.b2).0, (s.b2).1)
+  , ((s.b3).0, (s.b3).1)
+  , ((s.b4).0, (s.b4).1)
+  , ((s.b5).0, (s.b5).1) ]
+
+let spectrum_lookup (v: f32) (s: spectrum) : f32 =
+  -- TODO: SOACs don't seem to work well here. Compiler bug? Seems it
+  --       can't compute size of memory to allocate before kernel
+  --       start. Anywho, that's why we're not using `filter` etc.
+  let ((w_below, x_below), (w_above, x_above)) =
+    loop ((w_below, x_below), (w_above, x_above)) = ((-1, 0), (f32.inf, 0))
+    for (w, x) in spectrum_to_arr s
+    do if w > w_below && w <= v
+       then ((w, x), (w_above, x_above))
+       else if w < w_above && w > v
+       then ((w_below, x_below), (w, x))
+       else ((w_below, x_below), (w_above, x_above))
+  in match (w_below < 0, f32.isinf w_above)
+     case (true, true) -> 0
+     case (true, false) -> x_above
+     case (false, true) -> x_below
+     case (false, false) ->
+          f32.lerp x_below
+                   x_above
+                   ((v - w_below) / (w_above - w_below))
+
+type material =
+  { color: spectrum
+  , roughness: f32
+  , metalness: f32
+  , ref_ix: f32
+  , opacity: f32
+  , emission: spectrum }
+
+type ray = { origin: vec3, dir: vec3 }
+
+type hit = { t: f32, pos: vec3, normal: vec3, mat: material }
 
 let clamp ((min, max): (f32, f32)) (x: f32): f32 =
   f32.max min (f32.min max x)

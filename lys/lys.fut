@@ -61,7 +61,7 @@ module type lys = {
      -> (h: u32) -> (w: u32)
      -> (tri_geoms: [t][3][3]f32)
      -> (tri_mats: [t]u32)
-     -> (mat_data: [u][10]f32)
+     -> (mat_data: [u][28]f32)
      -> state
 
   -- | An event occured.  It is permissible to ignore any of these
