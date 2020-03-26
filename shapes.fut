@@ -34,7 +34,7 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
   let e2 = tr.c vec3.- tr.a
   let n = vec3.cross e1 e2
   let a = -(vec3.dot n ra.dir)
-  in maybe.when (!(a > -eps && a < eps))
+  in maybe.when (!(approx_zero a eps))
      <| let s = ra.origin vec3.- tr.a
         let m = vec3.cross s ra.dir
         let { x = t, y = u, z = v } =
@@ -42,7 +42,8 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
                      (mkvec3 (vec3.dot n s)
                              (vec3.dot m e2)
                              (-(vec3.dot m e1)))
-        in maybe.guard (u >= 0 && v >= 0 && u + v <= 1 && in_bounds t tmax)
+        let in_triangle = u >= 0 && v >= 0 && u + v <= 1
+        in maybe.guard (in_triangle && in_bounds t tmax)
            <| let pos = point_at_param ra t
               let normal = vec3.normalise n
               in { t, pos, normal }
@@ -50,12 +51,11 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
 let hit_sphere (tmax: f32) (r: ray) (s: sphere)
              : maybe hit' =
   let oc = r.origin vec3.- s.center
-  let a = 1 -- vec3.dot r.dir r.dir
   let b = 2 * vec3.dot oc r.dir
   let c = vec3.dot oc oc - s.radius * s.radius
-  let discriminant = b * b - 4 * a * c
-  let root0 = (-b - f32.sqrt discriminant) / (2 * a)
-  let root1 = (-b + f32.sqrt discriminant) / (2 * a)
+  let discriminant = b * b - 4 * c
+  let root0 = (-b - f32.sqrt discriminant) / 2
+  let root1 = (-b + f32.sqrt discriminant) / 2
   let handle_root t =
     let pos = point_at_param r t
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)

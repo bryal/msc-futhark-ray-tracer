@@ -46,6 +46,8 @@ module maybe = {
 
 type maybe 't = maybe.maybe t
 
+let approx_zero (a: f32) (eps: f32): bool = a > -eps && a < eps
+
 let mkvec3 x y z: vec3 = { x, y, z }
 
 let mkvec2 x y: vec2 = { x, y }
