@@ -34,19 +34,18 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
   let e2 = tr.c vec3.- tr.a
   let n = vec3.cross e1 e2
   let a = -(vec3.dot n ra.dir)
-  in if a > -eps && a < eps then #nothing else
-  let s = ra.origin vec3.- tr.a
-  let m = vec3.cross s ra.dir
-  let { x = t, y = u, z = v } =
-    vec3.scale (1 / a)
-               (mkvec3 (vec3.dot n s)
-                       (vec3.dot m e2)
-                       (-(vec3.dot m e1)))
-  in if u < 0 || v < 0 || u + v > 1 || !(in_bounds t tmax)
-     then #nothing
-     else let pos = point_at_param ra t
-          let normal = vec3.normalise n
-          in #just { t, pos, normal }
+  in maybe.when (!(a > -eps && a < eps))
+     <| let s = ra.origin vec3.- tr.a
+        let m = vec3.cross s ra.dir
+        let { x = t, y = u, z = v } =
+          vec3.scale (1 / a)
+                     (mkvec3 (vec3.dot n s)
+                             (vec3.dot m e2)
+                             (-(vec3.dot m e1)))
+        in maybe.guard (u >= 0 && v >= 0 && u + v <= 1 && in_bounds t tmax)
+           <| let pos = point_at_param ra t
+              let normal = vec3.normalise n
+              in { t, pos, normal }
 
 let hit_sphere (tmax: f32) (r: ray) (s: sphere)
              : maybe hit' =
@@ -60,12 +59,10 @@ let hit_sphere (tmax: f32) (r: ray) (s: sphere)
   let handle_root t =
     let pos = point_at_param r t
     let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
-    in #just { t, pos, normal }
-  in if discriminant > 0
-     then if in_bounds root0 tmax then handle_root root0
-          else if in_bounds root1 tmax then handle_root root1
-          else #nothing
-     else #nothing
+    in { t, pos, normal }
+  in maybe.when (discriminant > 0)
+     <| maybe.or (maybe.guard (in_bounds root0 tmax) (handle_root root0))
+                 (maybe.guard (in_bounds root1 tmax) (handle_root root1))
 
 let hit_geom (tmax: f32) (r: ray) (g: geom): maybe hit' =
   match g
@@ -77,7 +74,7 @@ let add_mat (mat: material) (h: hit'): hit =
 
 let hit_obj (tmax: f32) (r: ray) (ms: []material) (obj: obj)
            : maybe hit =
-  map_maybe (add_mat (unsafe ms[i32.u32 obj.mat_ix]))
+  maybe.map (add_mat (unsafe ms[i32.u32 obj.mat_ix]))
             (hit_geom tmax r obj.geom)
 
 let aabb_min_corner (b: aabb): vec3 =

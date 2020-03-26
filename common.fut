@@ -12,16 +12,39 @@ type vec2 = vec2.vector
 
 module dist = uniform_real_distribution f32 minstd_rand
 
-type maybe 't = #nothing | #just t
+type^ lazy 't = () -> t
 
-let is_just 'a (x: maybe a): bool =
-  match x case #just _ -> true
-          case #nothing -> false
+let strict 't (x: lazy t): t = x ()
 
-let map_maybe 'a 'b (f: a -> b) (x: maybe a): maybe b =
-  match x
-  case #just a -> #just (f a)
-  case #nothing ->  #nothing
+module maybe = {
+  type maybe 't = #nothing | #just t
+
+  let is_just 'a (x: maybe a): bool =
+    match x case #just _ -> true
+            case #nothing -> false
+
+  let map 'a 'b (f: a -> b) (x: maybe a): maybe b =
+    match x
+    case #just a -> #just (f a)
+    case #nothing ->  #nothing
+
+  let when 'a (pred: bool) (x: maybe a): maybe a =
+    if pred then x else #nothing
+
+  -- Non-strict version of `when`
+  let when' 'a (pred: bool) (x: () -> maybe a): maybe a =
+    if pred then strict x else #nothing
+
+  let guard 'a (pred: bool) (x: a): maybe a =
+    if pred then #just x else #nothing
+
+  let or 'a (x: maybe a) (y: maybe a): maybe a =
+    match x
+    case #just a -> #just a
+    case #nothing -> y
+}
+
+type maybe 't = maybe.maybe t
 
 let mkvec3 x y z: vec3 = { x, y, z }
 

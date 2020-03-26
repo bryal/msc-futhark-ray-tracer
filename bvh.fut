@@ -29,7 +29,7 @@ module fake_bvh: bvh = {
     in reduce select_min_hit #nothing (map (hit_obj tmax r mats) xs)
 
   let any_hit (tmax: f32) (r: ray) (xs: bvh): bool =
-    any (is_just <-< hit_geom tmax r <-< (.geom)) xs
+    any (maybe.is_just <-< hit_geom tmax r <-< (.geom)) xs
 }
 
 let morton_n_bits: u32 = 30
@@ -115,12 +115,11 @@ module lbvh: bvh = {
       loop (closest, tmax, current, prev) = (-1, tmax, 0, #internal (-1))
       while current != -1
       do let node = unsafe t.nodes[current]
-         let rec_child: maybe ptr =
-           if prev == node.left
-           then #just node.right
-           else if prev != node.right && hit_aabb tmax r node.aabb
-           then #just node.left
-           else #nothing
+         let rec_child = maybe.or
+           (maybe.guard (prev == node.left)
+                        node.right)
+           (maybe.guard (prev != node.right && hit_aabb tmax r node.aabb)
+                        node.left)
          in match rec_child
             case #nothing -> (closest, tmax, node.parent, #internal current)
             case #just ptr ->
@@ -130,9 +129,8 @@ module lbvh: bvh = {
                 match hit_obj tmax r ms (unsafe t.leaves[i])
                 case #just hit -> (i, hit.t, current, ptr)
                 case #nothing -> (closest, tmax, current, ptr)
-    in if closest >= 0
-       then hit_obj tmax r ms (unsafe t.leaves[closest])
-       else #nothing
+    in maybe.when (closest >= 0)
+       <| hit_obj tmax r ms (unsafe t.leaves[closest])
 
   -- TODO: Can probably be made faster. Just a basic improved version
   --       of closest_hit atm.
@@ -141,12 +139,11 @@ module lbvh: bvh = {
       loop (hit, current, prev) = (false, 0, #internal (-1))
       while !hit && current != -1
       do let node = unsafe t.nodes[current]
-         let rec_child: maybe ptr =
-           if prev == node.left
-           then #just node.right
-           else if prev != node.right && hit_aabb tmax r node.aabb
-           then #just node.left
-           else #nothing
+         let rec_child = maybe.or
+           (maybe.guard (prev == node.left)
+                        node.right)
+           (maybe.guard (prev != node.right && hit_aabb tmax r node.aabb)
+                        node.left)
          in match rec_child
             case #nothing -> (false, node.parent, #internal current)
             case #just ptr ->
