@@ -12,10 +12,6 @@ type vec2 = vec2.vector
 
 module dist = uniform_real_distribution f32 minstd_rand
 
-type^ lazy 't = () -> t
-
-let strict 't (x: lazy t): t = x ()
-
 module maybe = {
   type maybe 't = #nothing | #just t
 
@@ -30,10 +26,6 @@ module maybe = {
 
   let when 'a (pred: bool) (x: maybe a): maybe a =
     if pred then x else #nothing
-
-  -- Non-strict version of `when`
-  let when' 'a (pred: bool) (x: () -> maybe a): maybe a =
-    if pred then strict x else #nothing
 
   let guard 'a (pred: bool) (x: a): maybe a =
     if pred then #just x else #nothing
