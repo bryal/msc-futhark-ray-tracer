@@ -139,15 +139,24 @@ let balance_heuristic (nf: u32, pdf_f: f32) (ng: u32, pdf_g: f32): f32 =
   let (nf, ng) = (f32.u32 nf, f32.u32 ng)
   in nf * pdf_f / (nf * pdf_f + ng * pdf_g)
 
+-- TODO: Oh jeez we gotta make this more readable 100%
+--
 -- Estimate direct light contribution using Multiple Importance Sampling.
-let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (wavelen: f32) (l: light) (objs: xbvh.bvh)
+let estimate_direct (rng: rnge)
+                    (wo: vec3)
+                    (h: hit)
+                    (wavelen: f32)
+                    (l: light)
+                    (objs: xbvh.bvh)
                   : (rnge, f32) =
   -- Sample light with MIS
   let (rng, light_radiance) =
-    let (rng, { pos = _, wi, in_radiance, pdf }) = sample_light rng h wavelen l objs
+    let (rng, { pos = _, wi, in_radiance, pdf }) =
+      sample_light rng h wavelen l objs
     in if pdf == 0 || in_radiance == 0
        then (rng, 0)
-       else let f = bsdf_f wo wi h wavelen * f32.abs (vec3.dot wi h.normal)
+       else let f = bsdf_f wo wi h wavelen
+                    * f32.abs (vec3.dot wi h.normal)
             let scattering_pdf = bsdf_pdf wo wi h wavelen
             let weight = balance_heuristic (1, pdf) (1, scattering_pdf)
             in (rng, f * weight * in_radiance / pdf)
@@ -164,14 +173,16 @@ let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (wavelen: f32) (l: light) (o
               case #just lh ->
                 if occluded h lh.pos objs
                 then 0
-                else let in_radiance = arealight_incident_radiance h.pos lh.pos wavelen l
+                else let in_radiance =
+                       arealight_incident_radiance h.pos lh.pos wavelen l
                      let f = bsdf * f32.abs (vec3.dot wi h.normal)
                      in match pdf
                         case #impossible -> 0
                         case #delta -> f * in_radiance
                         case #nonzero pdf ->
                           let light_pdf = arealight_pdf l
-                          let weight = balance_heuristic (1, pdf) (1, light_pdf)
+                          let weight =
+                            balance_heuristic (1, pdf) (1, light_pdf)
                           in f * in_radiance * weight / pdf)
   in (rng, light_radiance + bsdf_radiance)
 
@@ -180,12 +191,17 @@ let estimate_direct (rng: rnge) (wo: vec3) (h: hit) (wavelen: f32) (l: light) (o
 -- Importance Sampling to eliminate fireflies and get caustics.
 --
 -- Basically equivalent to `UniformSampleOneLight` of PBR Book 14.3.
-let direct_radiance (rng: rnge) (wo: vec3) (h: hit) (wavelen: f32) (scene: accel_scene)
+let direct_radiance (rng: rnge)
+                    (wo: vec3)
+                    (h: hit)
+                    (wavelen: f32)
+                    (scene: accel_scene)
                   : (rnge, f32) =
   if null scene.lights
   then (rng, 0)
   else let (rng, l) = random_select rng scene.lights
-       let (rng, radiance) = estimate_direct rng wo h wavelen l scene.objs
+       let (rng, radiance) =
+         estimate_direct rng wo h wavelen l scene.objs
        let light_pdf = 1 / f32.i32 (length scene.lights)
        in (rng, radiance / light_pdf)
 
