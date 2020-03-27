@@ -294,6 +294,8 @@ let sample (scene: accel_scene)
   let wh = mkvec2 w h
   let ratio = w / h
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
+  -- TODO: When lidar, don't apply random offset, and don't "stretch"
+  --       the point to cover the whole pixel, so to speak.
   let xy = (ji vec2.+ offset) vec2./ wh
   -- Spectral sensitivities of the camera sensor, approximated with normal distributions.
   --
@@ -307,10 +309,13 @@ let sample (scene: accel_scene)
   -- For prototyping purposes we've (arbitrarily) chosen to model the
   -- Canon 400D, measured in the above UoT
   -- database. https://nae-lab.org/~rei/research/cs/zhao/files/canon_400d.jpg
-  let sensor =
+  let camera_sensor =
     [ ({ mu = 455, sigma = 22 }, mkvec3 0 0 1)
     , ({ mu = 535, sigma = 32 }, mkvec3 0 1 0)
     , ({ mu = 610, sigma = 26 }, mkvec3 1 0 0) ]
+  -- let lidar_sensor =
+  --   [ ({ mu = 1550, sigma = 10 }, mkvec3 1 0 0) ]
+  let sensor = camera_sensor
   -- TODO: Should probably not just be 1/n. The ration of area of
   --       distribution / area of all distributions?
   let (rng, (wavelen_distr, wavelen_radiance_to_rgb)) =
@@ -326,6 +331,8 @@ let sample (scene: accel_scene)
   let (rng, p) = random_unit_exclusive rng
   let wavelen = stat.sample (stat.mk_normal wavelen_distr) p
   let r = get_ray cam ratio xy rng
+  -- TODO: When lidar, create very thin spotlight based on the
+  --       direction of the ray.
   in vec3.scale (color r wavelen scene rng) wavelen_radiance_to_rgb
 
 let get_lights ({ objs, mats }: scene): []light =
