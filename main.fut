@@ -1,8 +1,11 @@
 import "lys/lys"
+import "lib/github.com/diku-dk/statistics/statistics"
 
 import "material"
 import "bvh"
 import "camera"
+
+module stat = mk_statistics f32
 
 module xbvh = lbvh
 
@@ -111,7 +114,7 @@ let sample_arealight (rng: rnge) (h: hit) (wavelen: f32) (l: arealight)
       let e2 = t.c vec3.- t.a
       let area = vec3.norm (vec3.cross e1 e2) / 2
       let (_rng, (u, v)) = random_in_triangle rng
-      let p = t.a vec3.+ vec3.scale u e1 vec3.+ vec3.scale v e2
+      let p = vec3.(t.a + scale u e1 + scale v e2)
       let wi = vec3.normalise (p vec3.- h.pos)
       let in_radiance = trianglelight_incident_radiance h.pos p t wavelen l.emission
       in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
@@ -209,9 +212,9 @@ let color (r: ray) (wavelen: f32) (scene: accel_scene) (rng: rnge)
         : f32 =
   let tmax = f32.highest
   let full_sky =
-    { b0 = (700, 0.3)
-    , b1 = (500, 0.2)
-    , b2 = (400, 0.4)
+    { b0 = (red_wavelen, 0.6)
+    , b1 = (green_wavelen, 0.7)
+    , b2 = (blue_wavelen, 0.8)
     , b3 = (-1, 0)
     , b4 = (-1, 0)
     , b5 = (-1, 0) }
@@ -292,12 +295,38 @@ let sample (scene: accel_scene)
   let ratio = w / h
   let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
   let xy = (ji vec2.+ offset) vec2./ wh
-  let (rng, (wavelen, wavelen_to_rgb)) =
-    random_select rng [ (700, mkvec3 3 0 0)
-                      , (500, mkvec3 0 3 0)
-                      , (400, mkvec3 0 0 3) ]
+  -- Spectral sensitivities of the camera sensor, approximated with normal distributions.
+  --
+  -- Possibly helpful data:
+  --   Jiang's paper and database:
+  --     http://www.gujinwei.org/research/camspec/camspec.pdf
+  --     http://www.gujinwei.org/research/camspec/db.html
+  --   Some database (with plotted JPGs!) from University of Tokyo:
+  --     https://nae-lab.org/~rei/research/cs/zhao/database.html
+  --
+  -- For prototyping purposes we've (arbitrarily) chosen to model the
+  -- Canon 400D, measured in the above UoT
+  -- database. https://nae-lab.org/~rei/research/cs/zhao/files/canon_400d.jpg
+  let sensor =
+    [ ({ mu = 455, sigma = 22 }, mkvec3 0 0 1)
+    , ({ mu = 535, sigma = 32 }, mkvec3 0 1 0)
+    , ({ mu = 610, sigma = 26 }, mkvec3 1 0 0) ]
+  -- TODO: Should probably not just be 1/n. The ration of area of
+  --       distribution / area of all distributions?
+  let (rng, (wavelen_distr, wavelen_radiance_to_rgb)) =
+    random_select rng sensor
+  let wavelen_radiance_to_rgb =
+    vec3.scale (f32.i32 (length sensor)) wavelen_radiance_to_rgb
+  -- Sample an `x` value (wavelength) from the normal distribution with
+  -- inverse transform sampling of normal distribution
+  -- = probit
+  -- = quantile function of normal distribution
+  -- = inverse CDF of normal distribution
+  -- = statistics.sample
+  let (rng, p) = random_unit_exclusive rng
+  let wavelen = stat.sample (stat.mk_normal wavelen_distr) p
   let r = get_ray cam ratio xy rng
-  in vec3.scale (color r wavelen scene rng) wavelen_to_rgb
+  in vec3.scale (color r wavelen scene rng) wavelen_radiance_to_rgb
 
 let get_lights ({ objs, mats }: scene): []light =
   let nonzero_spectrum s = !(null (filter (\(w, x) -> w >= 0 && x > 0)

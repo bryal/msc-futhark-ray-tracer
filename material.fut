@@ -19,11 +19,11 @@ let material_at_wavelen (m: material) (wavelen: f32): material' =
   , roughness = m.roughness
   , metalness = m.metalness
   -- TODO: Refractive index should depend on wavelength
-  -- FIXME: Temporary hack to get cool effect. Not physically based
+  -- FIXME: Temporary hack to get cool effect. Not really physically based
   , ref_ix =
       let measurement_wavelen = 589
       let delta = wavelen - measurement_wavelen
-      in m.ref_ix - delta * 0.002
+      in m.ref_ix - delta / 10000
   , opacity = m.opacity }
 
 -- A value of a Probability Density Function

@@ -58,6 +58,10 @@ let vec3_lerp (a: vec3) (b: vec3) (r: f32): vec3 =
 let same_side (dominant: vec3) (w: vec3): vec3 =
   vec3.scale (f32.sgn (vec3.dot dominant w)) w
 
+let red_wavelen:   f32 = 610
+let green_wavelen: f32 = 550
+let blue_wavelen:  f32 = 460
+
 type spectrum = { b0: (f32, f32)
                 , b1: (f32, f32)
                 , b2: (f32, f32)

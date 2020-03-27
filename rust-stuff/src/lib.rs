@@ -4,6 +4,10 @@ use std::ffi::CStr;
 use std::iter::{once, repeat};
 use std::path::Path;
 
+const RED_WAVELEN: f32 = 610.0;
+const GREEN_WAVELEN: f32 = 550.0;
+const BLUE_WAVELEN: f32 = 460.0;
+
 #[no_mangle]
 pub extern "C" fn load_obj_data(
     obj_path: *const i8,
@@ -51,11 +55,11 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
     for m in materials {
         let color_old = m.diffuse;
         let color = get_spectrum(&m, "Sp").unwrap_or([
-            700.0,
+            RED_WAVELEN,
             color_old[0],
-            500.0,
+            GREEN_WAVELEN,
             color_old[1],
-            400.0,
+            BLUE_WAVELEN,
             color_old[2],
             -1.0,
             0.0,
@@ -70,11 +74,11 @@ fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
         let opacity = get_scalar(&m, "Tf").unwrap_or(1.0);
         let emission_old = get_vec3(&m, "Ke").unwrap_or([0.0, 0.0, 0.0]);
         let emission = get_spectrum(&m, "Em").unwrap_or([
-            700.0,
+            RED_WAVELEN,
             emission_old[0],
-            500.0,
+            GREEN_WAVELEN,
             emission_old[1],
-            400.0,
+            BLUE_WAVELEN,
             emission_old[2],
             -1.0,
             0.0,
