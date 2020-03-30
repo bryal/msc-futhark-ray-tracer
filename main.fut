@@ -221,43 +221,42 @@ let color (r: ray) (wavelen: f32) (scene: accel_scene) (rng: rnge)
   let sky = spectrum_lookup wavelen full_sky
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
-    let choked_throughput = 0
     -- Arbitrary values
     let (a_ray, a_bounced, a_rng) = (r, true, rng)
-    in (radiance, choked_throughput, a_ray, a_bounced, a_rng)
-  -- Russian roulette termination. Instead of absolutely cutting off
-  -- the "recursion" after N bounces, keep going with some probability
-  -- and weight the samples appropriately. When we do it like this,
-  -- the final result is an unbiased estimate of the sum. See PBR Book
-  -- 14.5.1.
-  let p_termination = 0.1
-  let roulette_terminate rng = (random_unit_exclusive rng).1 < p_termination
+    in (radiance, false, a_ray, a_bounced, a_rng)
+  let continue radiance ray rng =
+    (radiance, true, ray, true, rng)
   in (.0) <|
-     loop (radiance, throughput, r, has_bounced, rng) =
-          (0, 1, r, false, rng)
-     while throughput > 0.001 && !(roulette_terminate rng)
-     do let throughput = throughput / (1 - p_termination)
-        in match xbvh.closest_hit tmax r scene.mats scene.objs
-           case #just h ->
-             let rng = advance_rng rng
-             let wo = vec3_neg r.dir
-             let (rng, direct_radiance) = direct_radiance rng wo h wavelen scene
-             let radiance = radiance
-                            + throughput * direct_radiance
-                            + if !has_bounced then spectrum_lookup wavelen h.mat.emission
-                                              else 0
-             let (rng, { wi, bsdf, pdf }) = sample_dir wo h wavelen rng
-             let pdf = match pdf
-                       case #impossible -> 0
-                       case #delta -> 1
-                       case #nonzero x -> x
-             in if pdf == 0
-                then finish radiance
-                else let cosFalloff = f32.abs (vec3.dot h.normal wi)
-                     let throughput = throughput * (bsdf * cosFalloff / pdf)
-                     let r = mkray_adjust_acne h wi
-                     in (radiance, throughput, r, true, rng)
-           case #nothing -> finish (radiance + (throughput * sky))
+     loop (radiance, should_continue, r, has_bounced, rng) =
+          (0, true, r, false, rng)
+     while should_continue
+     do match xbvh.closest_hit tmax r scene.mats scene.objs
+        case #just h ->
+          let rng = advance_rng rng
+          let wo = vec3_neg r.dir
+          let (rng, direct_radiance) = direct_radiance rng wo h wavelen scene
+          let radiance = radiance
+                         + direct_radiance
+                         + if !has_bounced then spectrum_lookup wavelen h.mat.emission
+                                           else 0
+          let (rng, { wi, bsdf, pdf }) = sample_dir wo h wavelen rng
+          let pdf = match pdf
+                    case #impossible -> 0
+                    case #delta -> 1
+                    case #nonzero x -> x
+          let cosFalloff = f32.abs (vec3.dot h.normal wi)
+          -- Russian roulette termination. Instead of absolutely cutting off
+          -- the "recursion" after N bounces, keep going with some probability
+          -- and weight the samples appropriately. When we do it like this,
+          -- the final result is an unbiased estimate of the sum. See PBR Book
+          -- 14.5.1, 13.7.
+          let p_terminate = 1 - bsdf * cosFalloff / pdf
+          let (rng, terminate) = map_snd (< p_terminate) (random_unit_exclusive rng)
+          in if pdf == 0 || terminate
+             then finish radiance
+             else let r = mkray_adjust_acne h wi
+                  in continue radiance r rng
+        case #nothing -> finish (radiance + sky)
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
