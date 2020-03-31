@@ -16,6 +16,11 @@ let mkrect (corners: [4]vec3): [2]geom =
               , b = corners[3]
               , c = corners[0] } ]
 
+let triangle_normal (t: triangle): vec3 =
+  let e1 = t.b vec3.- t.a
+  let e2 = t.c vec3.- t.a
+  in vec3.normalise (vec3.cross e1 e2)
+
 -- TODO: Benchmark if it's faster to represent an aabb as a pair of
 -- (top-forward-rightmost corner, bot-backward-leftmost corner).
 --

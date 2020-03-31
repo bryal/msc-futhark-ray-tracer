@@ -12,7 +12,16 @@ module xbvh = lbvh
 let mkray (o: vec3) (d: vec3): ray =
   { origin = o, dir = vec3.normalise(d) }
 
-type arealight = { geom: geom, emission: spectrum }
+type diffuselight = { geom: geom, emission: spectrum }
+type frustumlight = { geom: geom, theta: angle, emission: spectrum}
+
+type arealight = #diffuselight diffuselight
+               | #frustumlight frustumlight
+
+let arealight_geom (l: arealight): geom =
+  match l
+  case #diffuselight x -> x.geom
+  case #frustumlight x -> x.geom
 
 type light = #pointlight { pos: vec3, emission: spectrum }
            | #arealight arealight
@@ -63,20 +72,59 @@ let occluded (h: hit) (lightp: vec3) (objs: xbvh.bvh)
 
 type light_sample = { pos: vec3, wi: vec3, in_radiance: f32, pdf: f32 }
 
-let trianglelight_incident_radiance (hitp: vec3) (lightp: vec3) (t: triangle) (wavelen: f32) (emission: spectrum): f32 =
+let trianglelight_incident_radiance (emission: spectrum)
+                                    (t: triangle)
+                                    (hitp: vec3)
+                                    (lightp: vec3)
+                                    (wavelen: f32)
+                                  : f32 =
   let (wi, distance_sq) =
     let v = lightp vec3.- hitp
     in (vec3.normalise v, vec3.quadrance v)
-  let (e1, e2) = (t.b vec3.- t.a, t.c vec3.- t.a)
-  let lnormal = vec3.normalise (vec3.cross e1 e2)
+  let lnormal = triangle_normal t
   let cos_theta_l = vec3.dot (vec3_neg wi) lnormal
   in f32.max 0
              (spectrum_lookup wavelen emission * cos_theta_l / distance_sq)
 
-let arealight_incident_radiance (hitp: vec3) (lightp: vec3) (wavelen: f32) (light: arealight): f32 =
-  match light.geom
-  case #triangle t -> trianglelight_incident_radiance hitp lightp t wavelen light.emission
+let diffuselight_incident_radiance (l: diffuselight)
+                                   (hitp: vec3)
+                                   (lightp: vec3)
+                                   (wavelen: f32)
+                                 : f32 =
+  match l.geom
+  case #triangle t ->
+    trianglelight_incident_radiance l.emission t hitp lightp wavelen
+  -- TODO
   case #sphere _ -> 0
+
+let frustumlight_incident_radiance (l: frustumlight)
+                                   (hitp: vec3)
+                                   (lightp: vec3)
+                                   (wavelen: f32)
+                                 : f32 =
+  match l.geom
+  case #triangle t ->
+      let (wi, distance_sq) =
+        let v = lightp vec3.- hitp
+        in (vec3.normalise v, vec3.quadrance v)
+      let lnormal = triangle_normal t
+      let cos_theta_l = vec3.dot (vec3_neg wi) lnormal
+      in if f32.acos cos_theta_l <= to_rad l.theta
+         then spectrum_lookup wavelen l.emission / distance_sq
+         else 0
+  -- TODO
+  case #sphere _ -> 0
+
+let arealight_incident_radiance (l: arealight)
+                                (hitp: vec3)
+                                (lightp: vec3)
+                                (wavelen: f32)
+                              : f32 =
+  match l
+  case #diffuselight dl ->
+    diffuselight_incident_radiance dl hitp lightp wavelen
+  case #frustumlight fl ->
+    frustumlight_incident_radiance fl hitp lightp wavelen
 
 let triangle_area (t: triangle): f32 =
   let e1 = t.b vec3.- t.a
@@ -84,7 +132,8 @@ let triangle_area (t: triangle): f32 =
   in vec3.norm (vec3.cross e1 e2) / 2
 
 let arealight_pdf (l: arealight): f32 =
-  match l.geom
+  match arealight_geom l
+  -- TODO
   case #sphere _ -> 0
   case #triangle t -> 1 / triangle_area t
 
@@ -98,7 +147,7 @@ let sample_pointlight (h: hit) (pos: vec3) (wavelen: f32) (emission: spectrum)
 
 let sample_arealight (rng: rnge) (h: hit) (wavelen: f32) (l: arealight)
                    : (rnge, light_sample) =
-  match l.geom
+  match arealight_geom l
   case #triangle t ->
     let e1 = t.b vec3.- t.a
     let e2 = t.c vec3.- t.a
@@ -106,7 +155,7 @@ let sample_arealight (rng: rnge) (h: hit) (wavelen: f32) (l: arealight)
     let (_rng, (u, v)) = random_in_triangle rng
     let p = vec3.(t.a + scale u e1 + scale v e2)
     let wi = vec3.normalise (p vec3.- h.pos)
-    let in_radiance = trianglelight_incident_radiance h.pos p t wavelen l.emission
+    let in_radiance = arealight_incident_radiance l h.pos p wavelen
     in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
   -- TODO
   case #sphere _ ->
@@ -161,13 +210,13 @@ let estimate_direct (rng: rnge)
       let (rng, { wi, bsdf, pdf }) = sample_dir wo h wavelen rng
       in ( rng
          , let r = mkray_adjust_acne h wi
-           in match hit_geom f32.highest r l.geom
+           in match hit_geom f32.highest r (arealight_geom l)
               case #nothing -> 0
               case #just lh ->
                 if occluded h lh.pos objs
                 then 0
                 else let in_radiance =
-                       arealight_incident_radiance h.pos lh.pos wavelen l
+                       arealight_incident_radiance l h.pos lh.pos wavelen
                      let f = bsdf * f32.abs (vec3.dot wi h.normal)
                      in match pdf
                         case #impossible -> 0
@@ -250,8 +299,8 @@ let color (r: ray) (wavelen: f32) (scene: accel_scene) (rng: rnge)
 
 let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
   let lens_radius = cam.aperture / 2
-  let field_of_view = 80.0
-  let half_height = f32.tan ((to_radians field_of_view) / 2.0)
+  let field_of_view = from_deg 80.0
+  let half_height = f32.tan ((to_rad field_of_view) / 2.0)
   let half_width = ratio * half_height
   let (w, u, v) =
     (vec3.scale (-1) (cam_dir cam), cam_right cam, cam_up cam)
@@ -354,7 +403,7 @@ let get_lights ({ objs, mats }: scene): []light =
   let with_emission obj =
     { geom = obj.geom
     , emission = (unsafe mats[i32.u32 obj.mat_ix]).emission }
-  in map (\l -> #arealight l)
+  in map (\l -> #arealight (#diffuselight l))
      <| filter (nonzero_spectrum <-< (.emission))
      <| map with_emission objs
 

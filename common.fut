@@ -163,7 +163,13 @@ let random_select [n] 'a (rng: rnge) (xs: [n]a): (rnge, a) =
 
 let world_up: vec3 = mkvec3 0 1 0
 
-let to_radians (degs: f32): f32 = degs * f32.pi / 180.0
+type angle = { radians: f32 }
+
+let to_rad (a: angle): f32 = a.radians
+let from_rad (r: f32): angle = { radians = r }
+
+let to_deg (a: angle): f32 = a.radians * 180.0 / f32.pi
+let from_deg (d: f32): angle = { radians = d * f32.pi / 180.0 }
 
 let point_at_param (r: ray) (t: f32): vec3 =
   r.origin vec3.+ vec3.scale t r.dir
