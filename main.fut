@@ -98,22 +98,22 @@ let sample_pointlight (h: hit) (pos: vec3) (wavelen: f32) (emission: spectrum)
 
 let sample_arealight (rng: rnge) (h: hit) (wavelen: f32) (l: arealight)
                    : (rnge, light_sample) =
-    match l.geom
-    case #triangle t ->
-      let e1 = t.b vec3.- t.a
-      let e2 = t.c vec3.- t.a
-      let area = vec3.norm (vec3.cross e1 e2) / 2
-      let (_rng, (u, v)) = random_in_triangle rng
-      let p = vec3.(t.a + scale u e1 + scale v e2)
-      let wi = vec3.normalise (p vec3.- h.pos)
-      let in_radiance = trianglelight_incident_radiance h.pos p t wavelen l.emission
-      in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
-    -- TODO
-    case #sphere _ ->
-      (rng, { pos = mkvec3 0 0 0
-            , wi = mkvec3 0 0 0
-            , in_radiance = 0
-            , pdf = 0 })
+  match l.geom
+  case #triangle t ->
+    let e1 = t.b vec3.- t.a
+    let e2 = t.c vec3.- t.a
+    let area = vec3.norm (vec3.cross e1 e2) / 2
+    let (_rng, (u, v)) = random_in_triangle rng
+    let p = vec3.(t.a + scale u e1 + scale v e2)
+    let wi = vec3.normalise (p vec3.- h.pos)
+    let in_radiance = trianglelight_incident_radiance h.pos p t wavelen l.emission
+    in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
+  -- TODO
+  case #sphere _ ->
+    (rng, { pos = mkvec3 0 0 0
+          , wi = mkvec3 0 0 0
+          , in_radiance = 0
+          , pdf = 0 })
 
 let sample_light (rng: rnge) (h: hit) (wavelen: f32) (l: light) (objs: xbvh.bvh)
                : (rnge, light_sample) =
