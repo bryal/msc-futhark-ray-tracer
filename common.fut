@@ -12,6 +12,9 @@ type vec2 = vec2.vector
 
 module dist = uniform_real_distribution f32 minstd_rand
 
+let map_fst 'a 'b 'c (f: a -> c) (x: a, y: b): (c, b) = (f x, y)
+let map_snd 'a 'b 'c (f: b -> c) (x: a, y: b): (a, c) = (x, f y)
+
 module maybe = {
   type maybe 't = #nothing | #just t
 
@@ -77,6 +80,14 @@ let spectrum_to_arr (s: spectrum) : [6](f32, f32) =
   , ((s.b4).0, (s.b4).1)
   , ((s.b5).0, (s.b5).1) ]
 
+let spectrum_from_arr (xs: [6](f32, f32)): spectrum =
+  { b0 = xs[0]
+  , b1 = xs[1]
+  , b2 = xs[2]
+  , b3 = xs[3]
+  , b4 = xs[4]
+  , b5 = xs[5] }
+
 let spectrum_lookup (v: f32) (s: spectrum) : f32 =
   -- TODO: SOACs don't seem to work well here. Compiler bug? Seems it
   --       can't compute size of memory to allocate before kernel
@@ -98,6 +109,12 @@ let spectrum_lookup (v: f32) (s: spectrum) : f32 =
                    x_above
                    ((v - w_below) / (w_above - w_below))
 
+let map_spectrum (f: (f32, f32) -> (f32, f32)): spectrum -> spectrum =
+  spectrum_from_arr <-< map f <-< spectrum_to_arr
+
+let map_intensities (f: f32 -> f32): spectrum -> spectrum =
+  map_spectrum (map_snd f)
+
 type material =
   { color: spectrum
   , roughness: f32
@@ -114,9 +131,6 @@ let clamp ((min, max): (f32, f32)) (x: f32): f32 =
   f32.max min (f32.min max x)
 
 let error_vec: vec3 = mkvec3 1000 0 1000
-
-let map_fst 'a 'b 'c (f: a -> c) (x: a, y: b): (c, b) = (f x, y)
-let map_snd 'a 'b 'c (f: b -> c) (x: a, y: b): (a, c) = (x, f y)
 
 -- [0, 1)
 let random_unit_exclusive (rng: rnge): (rnge, f32) =

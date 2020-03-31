@@ -78,11 +78,6 @@ let arealight_incident_radiance (hitp: vec3) (lightp: vec3) (wavelen: f32) (ligh
   case #triangle t -> trianglelight_incident_radiance hitp lightp t wavelen light.emission
   case #sphere _ -> 0
 
-let light_incident_radiance (hitp: vec3) (lightp: vec3) (wavelen: f32) (light: light): f32 =
-  match light
-  case #pointlight _ -> 0 -- Delta distribution. Must be handled specially
-  case #arealight l -> arealight_incident_radiance hitp lightp wavelen l
-
 let triangle_area (t: triangle): f32 =
   let e1 = t.b vec3.- t.a
   let e2 = t.c vec3.- t.a
@@ -92,11 +87,6 @@ let arealight_pdf (l: arealight): f32 =
   match l.geom
   case #sphere _ -> 0
   case #triangle t -> 1 / triangle_area t
-
-let light_pdf (l: light): f32 =
-  match l
-  case #pointlight _ -> 0
-  case #arealight a -> arealight_pdf a
 
 let sample_pointlight (h: hit) (pos: vec3) (wavelen: f32) (emission: spectrum)
                     : light_sample =
@@ -333,6 +323,30 @@ let sample (scene: accel_scene)
   -- TODO: When lidar, create very thin spotlight based on the
   --       direction of the ray.
   in vec3.scale (color r wavelen scene rng) wavelen_radiance_to_rgb
+
+let nm_to_m: f32 -> f32 = (* 1e-9)
+let m_to_nm: f32 -> f32 = (* 1e9)
+
+-- Computes the emitted radiance at the given temperature T in kelvin
+-- according to Planck's Law.
+--
+-- PBR book 12.1.1
+let blackbody (T: f32): spectrum =
+  let c = 299792458
+  let h = 6.62606957e-34
+  let kb = 1.3806488e-23
+  let ls = map nm_to_m [150, blue_wavelen, green_wavelen, red_wavelen, 1000, 2000]
+  let planck l =
+    (2 * h * c * c)
+    / ((l**5) * (f32.exp ((h * c) / (l * kb  * T)) - 1))
+  in spectrum_from_arr (map (\l -> (m_to_nm l, planck l)) ls)
+
+let blackbody_normalized (T: f32): spectrum =
+  let radiance = blackbody T
+  let wiens_displacement = 2.8977721e-3
+  let lambda_max = m_to_nm (wiens_displacement / T)
+  let max_radiance = spectrum_lookup lambda_max radiance
+  in map_intensities (/ max_radiance) radiance
 
 let get_lights ({ objs, mats }: scene): []light =
   let nonzero_spectrum s = !(null (filter (\(w, x) -> w >= 0 && x > 0)
