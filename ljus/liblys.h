@@ -1,3 +1,6 @@
+// Copyright (c) 2019-2020. DIKU, University of Copenhagen
+// ISC License
+
 #ifndef LIBLYS_HEADER
 #define LIBLYS_HEADER
 

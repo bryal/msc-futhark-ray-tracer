@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# Copyright (c) 2019-2020. DIKU, University of Copenhagen
+# ISC License
+
 import sys
 import re
 
