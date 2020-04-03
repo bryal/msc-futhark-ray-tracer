@@ -1,5 +1,5 @@
 [package]
-name = "rust-stuff"
+name = "ljus-rs"
 version = "0.1.0"
 authors = ["Cool Kidz 2000"]
 edition = "2018"

@@ -1,5 +1,5 @@
-import "lys/lys"
-import "lib/github.com/diku-dk/statistics/statistics"
+import "../ljus/lys"
+import "../lib/github.com/diku-dk/statistics/statistics"
 
 import "material"
 import "bvh"

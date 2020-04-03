@@ -1,6 +1,6 @@
 import "radix_tree"
 import "shapes"
-import "lib/github.com/diku-dk/sorts/radix_sort"
+import "../lib/github.com/diku-dk/sorts/radix_sort"
 
 module type bvh = {
   type~ bvh

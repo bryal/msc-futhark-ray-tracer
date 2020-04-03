@@ -1,34 +1,44 @@
 LYS_BACKEND?=opencl
 CC=clang
 
-PROG_FUT_DEPS:=$(shell ls *.fut; find lib -name \*.fut)
+PROG_FUT_DEPS:=$(shell find lib -name \*.fut)
 
 NOWARN_CFLAGS=-std=c11 -O2 -DCL_TARGET_OPENCL_VERSION='220' -no-pie
 CFLAGS=$(NOWARN_CFLAGS)  -Wall -Wextra -Wconversion -pedantic -DLYS_BACKEND_$(LYS_BACKEND)
-BASE_LDFLAGS=-L./rust-stuff/target/release -lrust_stuff -lm -lfreetype -lpthread
-INCLUDE=-I. -I./rust-stuff
+BASE_LDFLAGS=-L./ljus/target/release -lljus_rs -lm -lfreetype -lpthread
+INCLUDE=-I./ljus -I./build
 
+ifeq ($(OS),Windows_NT)
+OPENCL_LDFLAGS = -L"${OCL_ROOT}\lib\x86_64" -lOpenCL
+OPENCL_INCLUDE = -I"${OCL_ROOT}\include"
+else
 OPENCL_LDFLAGS = -lOpenCL
+endif
+
+LDFLAGS = $(BASE_LDFLAGS)
 
 ifeq ($(LYS_BACKEND),opencl)
-	LDFLAGS=$(OPENCL_LDFLAGS) $(BASE_LDFLAGS)
+	ifeq ($(OS),Windows_NT)
+		LDFLAGS += -L"${OCL_ROOT}\lib\x86_64" -lOpenCL
+		INCLUDE += -I"${OCL_ROOT}\include"
+	else
+		LDFLAGS += -lOpenCL
+	endif
 else ifeq ($(LYS_BACKEND),cuda)
-	LDFLAGS=$(BASE_LDFLAGS) -lcuda -lnvrtc
+	LDFLAGS += -lcuda -lnvrtc
 else ifeq ($(LYS_BACKEND),c)
-	LDFLAGS=$(BASE_LDFLAGS)
+# nothing
 else
 	$(error Unknown LYS_BACKEND: $(LYS_BACKEND).  Must be 'opencl', 'cuda', or 'c')
 endif
 
 ifeq ($(OS),Windows_NT)
-OPENCL_LDFLAGS += -L"${OCL_ROOT}\lib\x86_64"
-LDFLAGS += -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lWs2_32 -lUserenv
-INCLUDE += -I"${OCL_ROOT}\include"
-MAIN=main.exe
-else # assume Linux
-LDFLAGS += -L./deps/SDL2/lib -ldl -lSDL2 -lSDL2_ttf
-INCLUDE += -I./deps/SDL2/include
-MAIN=main
+	LDFLAGS += -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lWs2_32 -lUserenv
+	MAIN = main.exe
+else
+	LDFLAGS += -L./deps/SDL2/lib -ldl -lSDL2 -lSDL2_ttf
+	INCLUDE += -I./deps/SDL2/include
+	MAIN = main
 endif
 
 all: $(MAIN)
@@ -38,29 +48,28 @@ $(MAIN):
 	futhark pkg sync
 	@make # The sync might have resulted in a new Makefile.
 else
-$(MAIN): main_wrapper.o main_wrapper.h main_printf.h lys/liblys.c lys/liblys.h librust_stuff
-	$(CC) lys/liblys.c main_wrapper.o -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
+$(MAIN): build/main_wrapper.o build/main_wrapper.h ljus/main_printf.h ljus/liblys.c ljus/liblys.h libljus_rs
+	$(CC) ljus/liblys.c build/main_wrapper.o -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
 endif
 
-main_printf.h: main_wrapper.c
-	python3 lys/gen_printf.py $@ $<
-
 # We do not want warnings and such for the generated code.
-main_wrapper.o: main_wrapper.c
+build/main_wrapper.o: build/main_wrapper.c
 	$(CC) -o $@ -c $< $(NOWARN_CFLAGS)
 
-%.c: %.fut
-	futhark $(LYS_BACKEND) --library $<
+build/main_wrapper.c: src/main_wrapper.fut $(PROG_FUT_DEPS)
+	mkdir -p build && futhark $(LYS_BACKEND) -o build/main_wrapper --library src/main_wrapper.fut
 
-%_wrapper.fut: lys/genlys.fut $(PROG_FUT_DEPS)
-	cat $< | sed 's/"lys"/"main"/' > $@
+build/main_wrapper.h: build/main_wrapper.c
 
-.PHONY: librust_stuff
-librust_stuff: $(shell find rust-stuff/src -name \*.rs)
-	cd rust-stuff; cargo build --lib --release
+.PHONY: libljus_rs
+libljus_rs: $(shell find ljus/src -name \*.rs)
+	cd ljus; cargo build --lib --release
 
 run: $(MAIN)
 	./$(MAIN)
 
 clean:
-	rm -f $(MAIN) main.c main.h main_wrapper.* main_printf.h *.o librust_stuff.a
+	rm -rf $(MAIN) build
+
+clean-full: clean
+	cd ljus && cargo clean

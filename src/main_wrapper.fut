@@ -1,10 +1,7 @@
--- | ignore
-
 -- This file exists as a wrapper that defines entry points in the
--- specific form that liblys.c requires.  It is copied into place and
--- modified by the rules in common.mk.
+-- specific form that liblys.c requires.
 
-module m = import "lys"
+module m = import "main"
 
 type^ state = m.lys.state
 

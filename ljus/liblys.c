@@ -6,7 +6,6 @@
 #define _XOPEN_SOURCE
 #include "liblys.h"
 #include "main_printf.h"
-#include "rust_stuff.h"
 
 #include <inttypes.h>
 #include <assert.h>
@@ -539,7 +538,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    char* font_path = stradd(parent_dir, "lys/Inconsolata-Regular.ttf");
+    char* font_path = stradd(parent_dir, "Inconsolata-Regular.ttf");
 
     struct lys_context ctx;
     memset(&ctx, 0, sizeof(struct lys_context));

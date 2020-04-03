@@ -1,5 +1,5 @@
-import "lib/github.com/athas/vector/vspace"
-import "lib/github.com/diku-dk/cpprandom/random"
+import "../lib/github.com/athas/vector/vspace"
+import "../lib/github.com/diku-dk/cpprandom/random"
 
 module rnge = minstd_rand
 type rnge = rnge.rng
