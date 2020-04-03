@@ -1,9 +1,12 @@
+import "linalg"
 import "common"
+import "rand"
 
-type camera =
-  { pitch: f32, yaw: f32
-  , origin: vec3
-  , aperture: f32, focal_dist: f32 }
+type camera = { pitch: f32
+              , yaw: f32
+              , origin: vec3
+              , aperture: f32
+              , focal_dist: f32 }
 
 let cam_dir (cam: camera): vec3 =
   vec3.normalise

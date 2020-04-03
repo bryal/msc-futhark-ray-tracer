@@ -1,12 +1,61 @@
 import "common"
+import "linalg"
+import "camera"
+
+type ray = { origin: vec3, dir: vec3 }
+
+type hit = { t: f32, pos: vec3, normal: vec3 }
 
 type triangle = { a: vec3, b: vec3, c: vec3 }
-
 type sphere = { center: vec3, radius: f32 }
 
 type geom = #sphere sphere | #triangle triangle
 
-type obj = { geom: geom, mat_ix: u32 }
+-- TODO: Benchmark if it's faster to represent an aabb as a pair of
+-- (top-forward-rightmost corner, bot-backward-leftmost corner).
+--
+-- Axis Aligned Bounding Box for use with BVHs
+type aabb = { center: vec3, half_dims: vec3  }
+
+
+let mkray (o: vec3) (d: vec3): ray =
+  { origin = o, dir = vec3.normalise(d) }
+
+-- Create a ray from a point in a direction, fix for surface acne
+let mkray_adjust_acne (h: hit) (wi: vec3): ray =
+  -- Note that we don't just walk along `wi`, because then we get
+  -- strange artifacts for some materials at extreme angles.
+  let eps = 0.001
+  let acne_offset = vec3.scale eps (same_side wi h.normal)
+  in mkray (h.pos vec3.+ acne_offset) wi
+
+let point_at_param (r: ray) (t: f32): vec3 =
+  r.origin vec3.+ vec3.scale t r.dir
+
+let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
+  let lens_radius = cam.aperture / 2
+  let field_of_view = from_deg 80.0
+  let half_height = f32.tan ((to_rad field_of_view) / 2.0)
+  let half_width = ratio * half_height
+  let (w, u, v) =
+    (vec3.scale (-1) (cam_dir cam), cam_right cam, cam_up cam)
+  let focus_dist = cam.focal_dist
+  let lower_left_corner =
+    cam.origin
+    vec3.- vec3.scale (half_width * focus_dist) u
+    vec3.- vec3.scale (half_height * focus_dist) v
+    vec3.- vec3.scale focus_dist w
+  let horizontal = vec3.scale (2 * half_width * focus_dist) u
+  let vertical = vec3.scale (2 * half_height * focus_dist) v
+  let (_, d) = random_in_unit_disk rng
+  let lens = vec3.scale lens_radius d
+  let lens_offset = vec3.scale lens.x u vec3.+ vec3.scale lens.y v
+  let origin = cam.origin vec3.+ lens_offset
+  in mkray origin
+           (lower_left_corner
+            vec3.+ vec3.scale coord.x horizontal
+            vec3.+ vec3.scale coord.y vertical
+            vec3.- origin)
 
 let mkrect (corners: [4]vec3): [2]geom =
   [ #triangle { a = corners[0]
@@ -21,18 +70,10 @@ let triangle_normal (t: triangle): vec3 =
   let e2 = t.c vec3.- t.a
   in vec3.normalise (vec3.cross e1 e2)
 
--- TODO: Benchmark if it's faster to represent an aabb as a pair of
--- (top-forward-rightmost corner, bot-backward-leftmost corner).
---
--- Axis Aligned Bounding Box for use with BVHs
-type aabb = { center: vec3, half_dims: vec3  }
-
 let in_bounds (t: f32) (tmax: f32): bool = t < tmax && t > 0
 
-type hit' = { t: f32, pos: vec3, normal: vec3 }
-
 let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
-               : maybe hit' =
+               : maybe hit =
   -- Algorithm from RTR 22.8, variant 22.16, based on 22.8.2
   let eps = 0.00001
   let e1 = tr.b vec3.- tr.a
@@ -54,7 +95,7 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
               in { t, pos, normal }
 
 let hit_sphere (tmax: f32) (r: ray) (s: sphere)
-             : maybe hit' =
+             : maybe hit =
   let oc = r.origin vec3.- s.center
   let b = 2 * vec3.dot oc r.dir
   let c = vec3.dot oc oc - s.radius * s.radius
@@ -69,18 +110,10 @@ let hit_sphere (tmax: f32) (r: ray) (s: sphere)
      <| maybe.or (maybe.guard (in_bounds root0 tmax) (handle_root root0))
                  (maybe.guard (in_bounds root1 tmax) (handle_root root1))
 
-let hit_geom (tmax: f32) (r: ray) (g: geom): maybe hit' =
+let hit_geom (tmax: f32) (r: ray) (g: geom): maybe hit =
   match g
   case #sphere s -> hit_sphere tmax r s
   case #triangle t -> hit_triangle tmax r t
-
-let add_mat (mat: material) (h: hit'): hit =
-  { t = h.t, pos = h.pos, normal = h.normal, mat }
-
-let hit_obj (tmax: f32) (r: ray) (ms: []material) (obj: obj)
-           : maybe hit =
-  maybe.map (add_mat (unsafe ms[i32.u32 obj.mat_ix]))
-            (hit_geom tmax r obj.geom)
 
 let aabb_min_corner (b: aabb): vec3 =
   b.center vec3.- b.half_dims
@@ -110,8 +143,8 @@ let bounding_box_triangle (t: triangle): aabb =
   let c = bounding_box_point t.c
   in containing_aabb a (containing_aabb b c)
 
-let bounding_box_obj (obj: obj): aabb =
-  match obj.geom
+let bounding_box_geom (g: geom): aabb =
+  match g
   case #sphere s -> bounding_box_sphere s
   case #triangle t -> bounding_box_triangle t
 

@@ -1,10 +1,25 @@
+import "spectrum"
+import "linalg"
+import "rand"
+import "shapes"
+
 -- All sampling functions except `sample_dir` work in local space
 -- around the axis vectors. `world_to_local` transforms the ray into
 -- the local space, and `local_to_world` transform the vectors back
 -- out into world space. The reason for this is that many calculations
 -- are simpler and cheaper when the normal is the z-axis (0, 0, 1).
 
-import "common"
+type material =
+  { color: spectrum
+  , roughness: f32
+  , metalness: f32
+  , ref_ix: f32
+  , opacity: f32
+  , emission: spectrum }
+
+type lightray = { r: ray, wavelen: f32 }
+
+type interaction = { h: hit, mat: material, wavelen: f32 }
 
 -- | The material properties at a specific wavelength
 type material' =
@@ -388,21 +403,21 @@ let local_to_world (onb: orthonormal_basis) (w: vec3): vec3 =
   vec3.+ vec3.scale w.y onb.binormal
   vec3.+ vec3.scale w.z onb.normal
 
-let bsdf_f (wo: vec3) (wi: vec3) (h: hit) (wavelen: f32): f32 =
-  let onb = mk_orthonormal_basis h.normal
+let bsdf_f (wo: vec3) (wi: vec3) (i: interaction): f32 =
+  let onb = mk_orthonormal_basis i.h.normal
   let (wo, wi) = (world_to_local onb wo, world_to_local onb wi)
-  in uber_bsdf wo wi (material_at_wavelen h.mat wavelen)
+  in uber_bsdf wo wi (material_at_wavelen i.mat i.wavelen)
 
-let bsdf_pdf (wo: vec3) (wi: vec3) (h: hit) (wavelen: f32): f32 =
-  let onb = mk_orthonormal_basis h.normal
+let bsdf_pdf (wo: vec3) (wi: vec3) (i: interaction): f32 =
+  let onb = mk_orthonormal_basis i.h.normal
   let (wo, wi) = (world_to_local onb wo, world_to_local onb wi)
-  in uber_pdf wo wi (material_at_wavelen h.mat wavelen)
+  in uber_pdf wo wi (material_at_wavelen i.mat i.wavelen)
 
 -- To make some calculations simpler, compute all
 -- reflection/refraction vectors in a local space where the normal is
 -- simply (0, 0, 1).
-let sample_dir (wo: vec3) (h: hit) (wavelen: f32) (rng: rnge): (rnge, dir_sample) =
-  let onb = mk_orthonormal_basis h.normal
+let sample_dir (wo: vec3) (i: interaction) (rng: rnge): (rnge, dir_sample) =
+  let onb = mk_orthonormal_basis i.h.normal
   let wo' = world_to_local onb wo
-  let (rng, s) = uber_sample_dir wo' (material_at_wavelen h.mat wavelen) rng
+  let (rng, s) = uber_sample_dir wo' (material_at_wavelen i.mat i.wavelen) rng
   in (rng, s with wi = local_to_world onb s.wi)

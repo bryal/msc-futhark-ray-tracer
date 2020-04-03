@@ -1,35 +1,45 @@
-import "radix_tree"
-import "shapes"
 import "../lib/github.com/diku-dk/sorts/radix_sort"
 
+import "radix_tree"
+import "shapes"
+
+module type Geom = {
+  type t
+  val get_geom: t -> geom
+}
+
 module type bvh = {
+  type t
   type~ bvh
 
-  val build [n]: [n]obj -> bvh
+  val build [n]: [n]t -> bvh
 
   -- For recursive ray-tracing / indirect illumination
-  val closest_hit [m]: f32 -> ray -> [m]material -> bvh -> maybe hit
+  val closest_hit: f32 -> ray -> bvh -> maybe (t, hit)
 
   -- For shadow rays / direct illumination. When only care about
   -- whether we hit *anything* before reaching the light source.
   val any_hit: f32 -> ray -> bvh -> bool
 }
 
-module fake_bvh: bvh = {
-  type~ bvh = []obj
+module mk_fake_bvh (G: Geom): bvh with t = G.t = {
+  type t = G.t
+  type~ bvh = []G.t
 
   let build = id
 
-  let closest_hit tmax r mats xs =
-    let select_min_hit a b =
+  let closest_hit tmax r xs: maybe (G.t, hit) =
+    let select_min_hit a b: maybe (G.t, hit) =
       match (a, b)
       case (#nothing, _) -> b
       case (_, #nothing) -> a
-      case (#just a', #just b') -> if a'.t < b'.t then a else b
-    in reduce select_min_hit #nothing (map (hit_obj tmax r mats) xs)
+      case (#just (_, ah), #just (_, bh)) ->
+        if ah.t < bh.t then a else b
+    let hit x = maybe.map (\h -> (x, h)) (hit_geom tmax r (G.get_geom x))
+    in reduce select_min_hit #nothing (map hit xs)
 
-  let any_hit (tmax: f32) (r: ray) (xs: bvh): bool =
-    any (maybe.is_just <-< hit_geom tmax r <-< (.geom)) xs
+  let any_hit tmax r xs =
+    any (maybe.is_just <-< hit_geom tmax r <-< G.get_geom) xs
 }
 
 let morton_n_bits: u32 = 30
@@ -62,18 +72,19 @@ let morton3D (v: vec3): u32 =
                      , expand_bits (u32.f32 z) )
   in xx * 4 + yy * 2 + zz
 
-module lbvh: bvh = {
+module mk_lbvh (G: Geom): bvh with t = G.t = {
   type node = { aabb: aabb, left: ptr, right: ptr, parent: i32 }
 
+  type t = G.t
   type~ bvh =
     -- The tree has its own unit-cube space. Everything must be
     -- transformed into it.
     { bounds: aabb
-    , leaves: []obj
+    , leaves: []t
     , nodes: []node }
 
-  let build [n] (xs: [n]obj): bvh =
-    let aabbs = map bounding_box_obj xs
+  let build [n] (xs: [n]t): bvh =
+    let aabbs = map (bounding_box_geom <-< G.get_geom) xs
     let neutral_aabb = { center = mkvec3 0 0 0
                        , half_dims = mkvec3_repeat (-f32.inf) }
     let bounds = reduce_comm containing_aabb neutral_aabb aabbs
@@ -109,12 +120,12 @@ module lbvh: bvh = {
             do map (update I) I
     in { bounds, leaves = xs, nodes = I }
 
-  let closest_hit (tmax: f32) (r: ray) (ms: []material) (t: bvh)
-            : maybe hit =
+  let closest_hit (tmax: f32) (r: ray) (bvh: bvh)
+                : maybe (t, hit) =
     let (closest, _, _, _) =
       loop (closest, tmax, current, prev) = (-1, tmax, 0, #internal (-1))
       while current != -1
-      do let node = unsafe t.nodes[current]
+      do let node = unsafe bvh.nodes[current]
          let rec_child = maybe.or
            (maybe.guard (prev == node.left)
                         node.right)
@@ -126,19 +137,20 @@ module lbvh: bvh = {
               match ptr
               case #internal i -> (closest, tmax, i, #internal current)
               case #leaf i ->
-                match hit_obj tmax r ms (unsafe t.leaves[i])
+                match hit_geom tmax r (G.get_geom (unsafe bvh.leaves[i]))
                 case #just hit -> (i, hit.t, current, ptr)
                 case #nothing -> (closest, tmax, current, ptr)
     in maybe.when (closest >= 0)
-       <| hit_obj tmax r ms (unsafe t.leaves[closest])
+       <| let a = unsafe bvh.leaves[closest]
+          in maybe.map (\h -> (a, h)) (hit_geom tmax r (G.get_geom a))
 
   -- TODO: Can probably be made faster. Just a basic improved version
   --       of closest_hit atm.
-  let any_hit (tmax: f32) (r: ray) (t: bvh): bool =
+  let any_hit (tmax: f32) (r: ray) (bvh: bvh): bool =
     (.0) <|
       loop (hit, current, prev) = (false, 0, #internal (-1))
       while !hit && current != -1
-      do let node = unsafe t.nodes[current]
+      do let node = unsafe bvh.nodes[current]
          let rec_child = maybe.or
            (maybe.guard (prev == node.left)
                         node.right)
@@ -150,7 +162,7 @@ module lbvh: bvh = {
               match ptr
               case #internal i -> (false, i, #internal current)
               case #leaf i ->
-                match hit_geom tmax r (unsafe t.leaves[i]).geom
+                match hit_geom tmax r (G.get_geom (unsafe bvh.leaves[i]))
                 case #just _ -> (true, current, ptr)
                 case #nothing -> (false, current, ptr)
 }

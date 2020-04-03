@@ -1,7 +1,7 @@
 LYS_BACKEND?=opencl
 CC=clang
 
-PROG_FUT_DEPS:=$(shell find lib -name \*.fut)
+PROG_FUT_DEPS:=$(shell find {lib,src} -name \*.fut)
 
 NOWARN_CFLAGS=-std=c11 -O2 -DCL_TARGET_OPENCL_VERSION='220' -no-pie
 CFLAGS=$(NOWARN_CFLAGS)  -Wall -Wextra -Wconversion -pedantic -DLYS_BACKEND_$(LYS_BACKEND)
@@ -48,18 +48,21 @@ $(MAIN):
 	futhark pkg sync
 	@make # The sync might have resulted in a new Makefile.
 else
-$(MAIN): build/main_wrapper.o build/main_wrapper.h ljus/main_printf.h ljus/liblys.c ljus/liblys.h libljus_rs
-	$(CC) ljus/liblys.c build/main_wrapper.o -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
+$(MAIN): build/main.o build/main.h build/main_printf.h ljus/liblys.c ljus/liblys.h libljus_rs
+	$(CC) ljus/liblys.c build/main.o -o $@ $(CFLAGS) $(INCLUDE) $(LDFLAGS)
 endif
 
 # We do not want warnings and such for the generated code.
-build/main_wrapper.o: build/main_wrapper.c
+build/main.o: build/main.c
 	$(CC) -o $@ -c $< $(NOWARN_CFLAGS)
 
-build/main_wrapper.c: src/main_wrapper.fut $(PROG_FUT_DEPS)
-	mkdir -p build && futhark $(LYS_BACKEND) -o build/main_wrapper --library src/main_wrapper.fut
+build/main.c: src/main.fut $(PROG_FUT_DEPS)
+	mkdir -p build && futhark $(LYS_BACKEND) -o build/main --library src/main.fut
 
-build/main_wrapper.h: build/main_wrapper.c
+build/main.h: build/main.c
+
+build/main_printf.h: build/main.c
+	python3 ljus/gen_printf.py $@ $<
 
 .PHONY: libljus_rs
 libljus_rs: $(shell find ljus/src -name \*.rs)

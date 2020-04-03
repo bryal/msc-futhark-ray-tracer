@@ -85,27 +85,6 @@ void window_size_updated(struct lys_context *ctx, uint32_t newx, uint32_t newy) 
     SDL_ASSERT(ctx->surface != NULL);
 }
 
-void mouse_event(struct lys_context *ctx, uint32_t state, int x, int y) {
-    // We ignore mouse events if we are running a program that would
-    // like mouse grab, but where we have temporarily taken the mouse
-    // back from it (to e.g. resize the window).
-    if (ctx->grab_mouse != ctx->mouse_grabbed) {
-        return;
-    }
-
-    struct futhark_opaque_state *new_state;
-    FUT_CHECK(ctx->fut, futhark_entry_mouse(ctx->fut, &new_state, (int32_t)state, x, y, ctx->state));
-    futhark_free_opaque_state(ctx->fut, ctx->state);
-    ctx->state = new_state;
-}
-
-void wheel_event(struct lys_context *ctx, int x, int y) {
-    struct futhark_opaque_state *new_state;
-    FUT_CHECK(ctx->fut, futhark_entry_wheel(ctx->fut, &new_state, x, y, ctx->state));
-    futhark_free_opaque_state(ctx->fut, ctx->state);
-    ctx->state = new_state;
-}
-
 void handle_sdl_events(struct lys_context *ctx) {
     SDL_Event event;
 
@@ -124,29 +103,6 @@ void handle_sdl_events(struct lys_context *ctx) {
             break;
         case SDL_QUIT:
             ctx->running = 0;
-            break;
-        case SDL_MOUSEMOTION:
-            if (ctx->grab_mouse) {
-                mouse_event(ctx, event.motion.state, event.motion.xrel, event.motion.yrel);
-            } else {
-                mouse_event(ctx, event.motion.state, event.motion.x, event.motion.y);
-            }
-            break;
-        case SDL_MOUSEBUTTONDOWN:
-        case SDL_MOUSEBUTTONUP:
-            if (ctx->grab_mouse && !ctx->mouse_grabbed) {
-                assert(SDL_SetRelativeMouseMode(1) == 0);
-                ctx->mouse_grabbed = 1;
-            }
-
-            if (ctx->grab_mouse) {
-                mouse_event(ctx, (uint32_t)(1<<(event.button.button-1)), event.motion.xrel, event.motion.yrel);
-            } else {
-                mouse_event(ctx, (uint32_t)(1<<(event.button.button-1)), event.motion.x, event.motion.y);
-            }
-            break;
-        case SDL_MOUSEWHEEL:
-            wheel_event(ctx, event.wheel.x, event.wheel.y);
             break;
         case SDL_KEYDOWN:
         case SDL_KEYUP:

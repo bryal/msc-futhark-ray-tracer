@@ -1,7 +1,7 @@
 #ifndef LIBLYS_HEADER
 #define LIBLYS_HEADER
 
-#include "main_wrapper.h"
+#include "main.h"
 #include <stdio.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
