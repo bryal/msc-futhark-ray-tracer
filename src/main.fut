@@ -32,6 +32,7 @@ entry init (_seed: u32)
              , origin = mkvec3 0 0.8 1.8
              , aperture = 0.0
              , focal_dist = 1.5 }
+     , lidar_mode = false
      , scene = accelerate_scene raw_scene }
 
 entry resize (h: u32) (w: u32) (s: state): state =
@@ -100,6 +101,9 @@ entry key (e: i32) (key: i32) (s: state): state =
        else if key == SDLK_l
        then s with cam =
          (s.cam with focal_dist = f32.max 0.1 (s.cam.focal_dist / 1.14))
+       else if key == SDLK_t
+       then s with lidar_mode = !s.lidar_mode
+              with mode = false
        else s
   else s
 

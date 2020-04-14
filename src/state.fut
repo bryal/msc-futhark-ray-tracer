@@ -12,4 +12,5 @@ type~ state = { time: f32
               , n_frames: u32
               , mode: bool
               , cam: camera
+              , lidar_mode: bool
               , scene: accel_scene }

@@ -60,6 +60,7 @@ let color (lr: lightray) (scene: accel_scene) (rng: rnge)
 
 let sample (scene: accel_scene)
            (cam: camera)
+           (lidar_mode: bool)
            (w: f32, h: f32)
            (j: u32, i: u32)
            (offset: vec2)
@@ -87,9 +88,9 @@ let sample (scene: accel_scene)
     [ ({ mu = 455, sigma = 22 }, mkvec3 0 0 1)
     , ({ mu = 535, sigma = 32 }, mkvec3 0 1 0)
     , ({ mu = 610, sigma = 26 }, mkvec3 1 0 0) ]
-  -- let lidar_sensor =
-  --   [ ({ mu = 1550, sigma = 10 }, mkvec3 1 0 0) ]
-  let sensor = camera_sensor
+  let lidar_sensor =
+    [ ({ mu = 1550, sigma =  }, mkvec3 1 0 0) ]
+  let sensor = if lidar_mode then lidar_sensor else camera_sensor
   -- TODO: Should probably not just be 1/n. The ration of area of
   --       distribution / area of all distributions?
   let (rng, (wavelen_distr, wavelen_radiance_to_rgb)) =
@@ -124,6 +125,7 @@ let sample_all (s: state): (rnge, [][]vec3) =
     let offset = mkvec2 offset_x offset_y
     in (vec3./) (sample s.scene
                         s.cam
+                        s.lidar_mode
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
                         offset rng)
