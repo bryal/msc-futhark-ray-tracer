@@ -3,7 +3,7 @@ CC=clang
 
 PROG_FUT_DEPS:=$(shell find {lib,src} -name \*.fut)
 
-NOWARN_CFLAGS=-std=c11 -O2 -DCL_TARGET_OPENCL_VERSION='220' -no-pie
+NOWARN_CFLAGS=-std=c11 -O2 -no-pie
 CFLAGS=$(NOWARN_CFLAGS)  -Wall -Wextra -Wconversion -pedantic -DLYS_BACKEND_$(LYS_BACKEND)
 BASE_LDFLAGS=-L./ljus/target/release -lljus_rs -lm -lfreetype -lpthread
 INCLUDE=-I./ljus -I./build

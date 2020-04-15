@@ -72,15 +72,17 @@ module radix_tree = {
 
 
     -- TODO: Can't this section be done any better? Feels suboptimal 🤔
+    let n_nodes = n - 1
+    let n_relations = n_nodes * 2
     let (I, left_relations, right_relations) =
-      unzip3 (map mk_node (iota (length L - 1)))
+      unzip3 (map mk_node (iota n_nodes))
     let (left_children, left_parents) = unzip left_relations
     let (right_children, right_parents) = unzip right_relations
     let children = left_children ++ right_children
     let parents = left_parents ++ right_parents
-    let sorted_parents = scatter (replicate (n - 1) (-1))
-                                 children
-                                 parents
+    let sorted_parents = scatter (replicate n_nodes (-1))
+                                 (children :> [n_relations]i32)
+                                 (parents :> [n_relations]i32)
     let I = map2 (\{ left, right } parent -> { left, right, parent })
                  I
                  sorted_parents
