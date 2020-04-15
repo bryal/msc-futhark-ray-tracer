@@ -31,7 +31,8 @@ entry init (_seed: u32)
              , yaw = 0.0
              , origin = mkvec3 0 0.8 1.8
              , aperture = 0.0
-             , focal_dist = 1.5 }
+             , focal_dist = 1.5
+             , transmitter = #none }
      , lidar_mode = false
      , scene = accelerate_scene raw_scene }
 
@@ -104,6 +105,12 @@ entry key (e: i32) (key: i32) (s: state): state =
        else if key == SDLK_t
        then s with lidar_mode = !s.lidar_mode
               with mode = false
+       else if key == SDLK_8
+       then s with cam = (s.cam with transmitter = #flash { radius = 0.1, emission = uniform_spectrum 400 })
+       else if key == SDLK_9
+       then s with cam = (s.cam with transmitter = #scanning { radius = 0.1, theta = from_deg 60, emission = uniform_spectrum 100000 })
+       else if key == SDLK_0
+       then s with cam = (s.cam with transmitter = #none)
        else s
   else s
 

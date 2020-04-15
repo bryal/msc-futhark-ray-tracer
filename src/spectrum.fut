@@ -77,3 +77,11 @@ let blackbody_normalized (T: f32): spectrum =
   let lambda_max = m_to_nm (wiens_displacement / T)
   let max_radiance = spectrum_lookup lambda_max radiance
   in map_intensities (/ max_radiance) radiance
+
+let uniform_spectrum (intensity: f32): spectrum =
+  { b0 = (0, intensity)
+  , b1 = (-1, 0)
+  , b2 = (-1, 0)
+  , b3 = (-1, 0)
+  , b4 = (-1, 0)
+  , b5 = (-1, 0) }

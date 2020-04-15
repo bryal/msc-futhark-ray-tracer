@@ -63,15 +63,8 @@ let sample (scene: accel_scene)
            (lidar_mode: bool)
            (w: f32, h: f32)
            (j: u32, i: u32)
-           (offset: vec2)
            (rng: rnge)
          : vec3 =
-  let wh = mkvec2 w h
-  let ratio = w / h
-  let ji = mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0)
-  -- TODO: When lidar, don't apply random offset, and don't "stretch"
-  --       the point to cover the whole pixel, so to speak.
-  let xy = (ji vec2.+ offset) vec2./ wh
   -- Spectral sensitivities of the camera sensor, approximated with normal distributions.
   --
   -- Possibly helpful data:
@@ -105,10 +98,14 @@ let sample (scene: accel_scene)
   -- = statistics.sample
   let (rng, p) = random_unit_exclusive rng
   let wavelen = stat.sample (stat.mk_normal wavelen_distr) p
-  let r = get_ray cam ratio xy rng
+  let r = get_ray cam
+                  (mkvec2 w h)
+                  (mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0))
+                  rng
   -- TODO: When lidar, create very thin spotlight based on the
   --       direction of the ray.
   let lr = { r, wavelen }
+  let scene = scene with lights = scene.lights ++ gen_transmitter cam r
   in vec3.scale (color lr scene rng) wavelen_radiance_to_rgb
 
 let sample_all (s: state): (rnge, [][]vec3) =
@@ -120,15 +117,12 @@ let sample_all (s: state): (rnge, [][]vec3) =
   let sample' i j rngs =
     let ix = i * i32.u32 w + j
     let rng = rngs[ix]
-    let (rng, offset_x) = dist.rand (0,1) rng
-    let (rng, offset_y) = dist.rand (0,1) rng
-    let offset = mkvec2 offset_x offset_y
     in (vec3./) (sample s.scene
                         s.cam
                         s.lidar_mode
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
-                        offset rng)
+                        rng)
                 (mkvec3_repeat (f32.u32 s.samples))
   let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
               reduce_comm (vec3.+)

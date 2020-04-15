@@ -1,6 +1,5 @@
 import "common"
 import "linalg"
-import "camera"
 
 type ray = { origin: vec3, dir: vec3 }
 
@@ -18,8 +17,28 @@ type geom = #sphere sphere | #triangle triangle
 type aabb = { center: vec3, half_dims: vec3  }
 
 
+let disk (p: vec3) (normal: vec3) (radius: f32) (n_sectors: i32)
+       : [n_sectors]triangle =
+  let a = 2 * f32.pi / f32.i32 n_sectors
+  let right = let c = vec3.cross normal world_up
+              in if vec3.norm c == 0
+                 then mkvec3 1 0 0
+                 else vec3.normalise c
+  let up = vec3.normalise (vec3.cross right normal)
+  let sector i =
+    let i = f32.i32 i
+    let (b0, b1) = (a * i, a * (i + 1))
+    let angle_to_vec b =
+      let { x, y, z=_ } = vec3.rot_z b (mkvec3 1 0 0)
+      in vec3.scale x right vec3.+ vec3.scale y up
+    let (v0, v1) = (angle_to_vec b0, angle_to_vec b1)
+    in { a = p
+       , b = p vec3.+ vec3.scale radius v1
+       , c = p vec3.+ vec3.scale radius v0 }
+  in map sector (iota n_sectors)
+
 let mkray (o: vec3) (d: vec3): ray =
-  { origin = o, dir = vec3.normalise(d) }
+  { origin = o, dir = vec3.normalise d }
 
 -- Create a ray from a point in a direction, fix for surface acne
 let mkray_adjust_acne (h: hit) (wi: vec3): ray =
@@ -31,31 +50,6 @@ let mkray_adjust_acne (h: hit) (wi: vec3): ray =
 
 let point_at_param (r: ray) (t: f32): vec3 =
   r.origin vec3.+ vec3.scale t r.dir
-
-let get_ray (cam: camera) (ratio: f32) (coord: vec2) (rng: rnge): ray =
-  let lens_radius = cam.aperture / 2
-  let field_of_view = from_deg 80.0
-  let half_height = f32.tan ((to_rad field_of_view) / 2.0)
-  let half_width = ratio * half_height
-  let (w, u, v) =
-    (vec3.scale (-1) (cam_dir cam), cam_right cam, cam_up cam)
-  let focus_dist = cam.focal_dist
-  let lower_left_corner =
-    cam.origin
-    vec3.- vec3.scale (half_width * focus_dist) u
-    vec3.- vec3.scale (half_height * focus_dist) v
-    vec3.- vec3.scale focus_dist w
-  let horizontal = vec3.scale (2 * half_width * focus_dist) u
-  let vertical = vec3.scale (2 * half_height * focus_dist) v
-  let (_, d) = random_in_unit_disk rng
-  let lens = vec3.scale lens_radius d
-  let lens_offset = vec3.scale lens.x u vec3.+ vec3.scale lens.y v
-  let origin = cam.origin vec3.+ lens_offset
-  in mkray origin
-           (lower_left_corner
-            vec3.+ vec3.scale coord.x horizontal
-            vec3.+ vec3.scale coord.y vertical
-            vec3.- origin)
 
 let mkrect (corners: [4]vec3): [2]geom =
   [ #triangle { a = corners[0]
