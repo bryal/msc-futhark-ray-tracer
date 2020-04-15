@@ -89,7 +89,7 @@ let sample (scene: accel_scene)
     , ({ mu = 535, sigma = 32 }, mkvec3 0 1 0)
     , ({ mu = 610, sigma = 26 }, mkvec3 1 0 0) ]
   let lidar_sensor =
-    [ ({ mu = 1550, sigma =  }, mkvec3 1 0 0) ]
+    [ ({ mu = 1550, sigma = 10 }, mkvec3 1 0 0) ]
   let sensor = if lidar_mode then lidar_sensor else camera_sensor
   -- TODO: Should probably not just be 1/n. The ration of area of
   --       distribution / area of all distributions?
