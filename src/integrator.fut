@@ -136,9 +136,9 @@ let sample_all (s: state): (rnge, [][]vec3) =
                           (map (sample' i j) rngss)
   in (advance_rng s.rng, img)
 
-let sample_accum (s: state): (rnge, [][]vec3) =
+let sample_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
   let (rng, img_new) = sample_all s
   let nf = f32.u32 s.n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
-  in (rng, map2 (map2 merge) s.img img_new)
+  in (rng, map2 (map2 merge) s.img (img_new :> [m][n]vec3))
