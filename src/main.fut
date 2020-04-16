@@ -107,9 +107,9 @@ entry key (e: i32) (key: i32) (s: state): state =
        then s with lidar_mode = !s.lidar_mode
               with mode = false
        else if key == SDLK_8
-       then s with cam = (s.cam with transmitter = #flash { radius = 0.1, emission = uniform_spectrum 400 })
+       then s with cam = (s.cam with transmitter = #flash { radius = 0.04, emission = map_intensities (* 1000) (blackbody_normalized 5500) })
        else if key == SDLK_9
-       then s with cam = (s.cam with transmitter = #scanning { radius = 0.1, theta = from_deg 60, emission = uniform_spectrum 100000 })
+       then s with cam = (s.cam with transmitter = #scanning { radius = 0.04, theta = from_deg 2, emission = uniform_spectrum 1500 })
        else if key == SDLK_0
        then s with cam = (s.cam with transmitter = #none)
        else if key == SDLK_p
