@@ -105,7 +105,9 @@ let sample (scene: accel_scene)
   -- TODO: When lidar, create very thin spotlight based on the
   --       direction of the ray.
   let lr = { r, wavelen }
-  let scene = scene with lights = scene.lights ++ gen_transmitter cam r
+  let transmitter_n_sectors = 8
+  let scene = scene with lights =
+    scene.lights ++ gen_transmitter transmitter_n_sectors cam r
   in vec3.scale (color lr scene rng) wavelen_radiance_to_rgb
 
 let sample_all (s: state): (rnge, [][]vec3) =

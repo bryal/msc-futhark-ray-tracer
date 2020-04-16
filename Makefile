@@ -69,7 +69,7 @@ libljus_rs: $(shell find ljus/src -name \*.rs)
 	cd ljus; cargo build --lib --release
 
 run: $(MAIN)
-	./$(MAIN)
+	./$(MAIN) -o assets/SpectrumSphere.obj
 
 clean:
 	rm -rf $(MAIN) build
