@@ -26,6 +26,7 @@ entry init (_seed: u32)
      , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
      , samples = 1
      , n_frames = 1
+     , ambience = bright_blue_sky
      , mode = false
      , cam = { pitch = 0.0
              , yaw = 0.0
@@ -111,6 +112,10 @@ entry key (e: i32) (key: i32) (s: state): state =
        then s with cam = (s.cam with transmitter = #scanning { radius = 0.1, theta = from_deg 60, emission = uniform_spectrum 100000 })
        else if key == SDLK_0
        then s with cam = (s.cam with transmitter = #none)
+       else if key == SDLK_p
+       then s with ambience = if s.ambience.b0.1 == 0
+                              then bright_blue_sky
+                              else uniform_spectrum 0
        else s
   else s
 

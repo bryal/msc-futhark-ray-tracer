@@ -7,17 +7,13 @@ import "direct"
 module stat = mk_statistics f32
 
 
-let color (lr: lightray) (scene: accel_scene) (rng: rnge)
+let color (lr: lightray)
+          (scene: accel_scene)
+          (ambience: spectrum)
+          (rng: rnge)
         : f32 =
   let tmax = f32.highest
-  let full_sky =
-    { b0 = (red_wavelen, 0.6)
-    , b1 = (green_wavelen, 0.7)
-    , b2 = (blue_wavelen, 0.8)
-    , b3 = (-1, 0)
-    , b4 = (-1, 0)
-    , b5 = (-1, 0) }
-  let sky = spectrum_lookup lr.wavelen full_sky
+  let ambience = spectrum_lookup lr.wavelen ambience
   -- Choke throughput to end the loop, returning the radiance
   let finish radiance =
     -- Arbitrary values
@@ -56,11 +52,12 @@ let color (lr: lightray) (scene: accel_scene) (rng: rnge)
              else continue radiance
                            (lr with r = mkray_adjust_acne i.h wi)
                            rng
-        case #nothing -> finish (radiance + sky)
+        case #nothing -> finish (radiance + ambience)
 
 let sample (scene: accel_scene)
            (cam: camera)
            (lidar_mode: bool)
+           (ambience: spectrum)
            (w: f32, h: f32)
            (j: u32, i: u32)
            (rng: rnge)
@@ -108,7 +105,7 @@ let sample (scene: accel_scene)
   let transmitter_n_sectors = 8
   let scene = scene with lights =
     scene.lights ++ gen_transmitter transmitter_n_sectors cam r
-  in vec3.scale (color lr scene rng) wavelen_radiance_to_rgb
+  in vec3.scale (color lr scene ambience rng) wavelen_radiance_to_rgb
 
 let sample_all (s: state): (rnge, [][]vec3) =
   let (w, h) = s.dimensions
@@ -122,6 +119,7 @@ let sample_all (s: state): (rnge, [][]vec3) =
     in (vec3./) (sample s.scene
                         s.cam
                         s.lidar_mode
+                        s.ambience
                         (f32.u32 w, f32.u32 h)
                         (u32.i32 j, u32.i32 i)
                         rng)

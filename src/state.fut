@@ -10,6 +10,7 @@ type~ state = { time: f32
               , img: [][]vec3
               , samples: u32
               , n_frames: u32
+              , ambience: spectrum
               , mode: bool
               , cam: camera
               , lidar_mode: bool
