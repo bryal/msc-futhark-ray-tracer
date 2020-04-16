@@ -69,17 +69,14 @@ let get_ray (cam: camera) (wh: vec2) (ji: vec2) (rng: rnge): ray =
             vec3.+ vec3.scale y vertical
             vec3.- origin)
 
-let gen_transmitter (n_sectors: i32) (c: camera) (r: ray): [n_sectors]light =
-  let (dir, radius, theta, emission) =
-    match c.transmitter
-    case #flash { radius, emission } ->
-      (cam_dir c, radius, from_deg 90, emission)
-    case #scanning { radius, theta, emission } ->
-      (r.dir, radius, theta, emission)
-    case #none ->
-      (cam_dir c, 0.0, from_deg 0, uniform_spectrum 0)
-  let tris = disk c.origin dir radius n_sectors
-  in map (\t -> #arealight (#frustumlight { geom = #triangle t
-                                          , theta
-                                          , emission }))
-         tris
+let gen_transmitter (c: camera) (r: ray): []light =
+  let n_sectors = 8 in
+  map (\l -> #arealight l)
+  <| match c.transmitter
+     case #flash { radius, emission } ->
+       map (\t -> #diffuselight { geom = #triangle t, emission })
+           (disk c.origin (cam_dir c) radius n_sectors)
+     case #scanning { radius, theta, emission } ->
+       map (\t -> #frustumlight { geom = #triangle t, theta, emission })
+           (disk c.origin r.dir radius n_sectors)
+     case #none -> []
