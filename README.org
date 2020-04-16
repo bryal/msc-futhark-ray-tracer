@@ -61,7 +61,7 @@ in [[https://futhark-lang.org/][Futhark]]
   Athas]].
 
 * License
-  This project is licensed under the AGPL, version 3 or later. See
+  This project is released under the AGPL, version 3 or later. See
   [[./LICENSE-AGPLv3][LICENSE-AGPLv3]].
 
 ** Notice
