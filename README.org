@@ -67,14 +67,14 @@ implemented in the GPGPU purely functional array programming language
    - p :: Toggle sky.
 * Attributions
   Much of the windowing code is based on [[https://github.com/diku-dk/lys][lys]], owned by DIKU and
-  licensed under the ISC license (see [[./LICENSE-ISC][LICENSE-ISC]]).
+  licensed under the ISC license (see [[./ljus/LYS-LICENSE]]).
 
   Our LBVH implementation takes a lot of inspiration from [[https://github.com/athas/raytracingthenextweekinfuthark][the one in
   here by Athas]].
 
 * License
   This project is released under the AGPL, version 3 or later. See
-  [[./LICENSE-AGPLv3][LICENSE-AGPLv3]].
+  [[./LICENSE]].
 
 ** Notice
    Copyright (C) 2020  Ari von Nordenskjöld & Johan Johansson
