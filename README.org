@@ -68,8 +68,8 @@ implemented in the GPGPU purely functional array programming language
   Much of the windowing code is based on [[https://github.com/diku-dk/lys][lys]], owned by DIKU and
   licensed under the ISC license (see [[./LICENSE-ISC][LICENSE-ISC]]).
 
-  Our LBVH implementation takes a lot of inspiration from [[https://github.com/athas/raytracingthenextweekinfuthark][this one by
-  Athas]].
+  Our LBVH implementation takes a lot of inspiration from [[https://github.com/athas/raytracingthenextweekinfuthark][the one in
+  here by Athas]].
 
 * License
   This project is released under the AGPL, version 3 or later. See

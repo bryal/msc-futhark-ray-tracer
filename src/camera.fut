@@ -70,23 +70,13 @@ let get_ray (cam: camera) (wh: vec2) (ji: vec2) (rng: rnge): ray =
             vec3.- origin)
 
 let gen_transmitter (c: camera) (r: ray): []light =
-  let n_sectors = 8
-  in match c.transmitter
-  case #flash { radius, emission } ->
-    let tris = disk c.origin (cam_dir c) radius n_sectors
-    let to_light (t: triangle): light = #arealight
-      (#diffuselight { geom = #triangle t, emission })
-    in map to_light tris
-  case #scanning { radius, theta, emission } ->
-    -- FIXME: When using r.dir here in any way, even if it's 99%
-    --        cam_dir and 1% r.dir, it's as if the light stops
-    --        working. May be related to another bug, which can be
-    --        triggered by passing `f32.i32 j` to this function from
-    --        `sample` and using it to make a vec3. Triggers an
-    --        internal compiler error, see
-    --        https://github.com/diku-dk/futhark/issues/921
-    let tris = disk c.origin r.dir radius n_sectors
-    let to_light (t: triangle): light = #arealight
-      (#frustumlight { geom = #triangle t, theta, emission })
-    in map to_light tris
-  case #none -> []
+  let n_sectors = 8 in
+  map (\l -> #arealight l)
+  <| match c.transmitter
+     case #flash { radius, emission } ->
+       map (\t -> #diffuselight { geom = #triangle t, emission })
+           (disk c.origin (cam_dir c) radius n_sectors)
+     case #scanning { radius, theta, emission } ->
+       map (\t -> #frustumlight { geom = #triangle t, theta, emission })
+           (disk c.origin r.dir radius n_sectors)
+     case #none -> []
