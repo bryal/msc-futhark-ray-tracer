@@ -1,12 +1,21 @@
 #+TITLE: Sensor simulator ray-tracer
 
-in [[https://futhark-lang.org/][Futhark]]
+A spectral path tracer (Monte Carlo integration, physically based,
+multiple importance sampling) that can simulate both vision and LIDAR,
+implemented in the GPGPU purely functional array programming language
+[[https://futhark-lang.org/][Futhark]].
+
+[[file:prism-dispersion.png]]
 
 * Dependencies
-  Regardless of platform, first [[https://futhark.readthedocs.io/en/latest/installation.html][install Futhark]].
+  Regardless of platform, you need to install both [[https://futhark.readthedocs.io/en/latest/installation.html][Futhark]] and [[https://rustup.rs/][Rust]]
+  (and a C compiler). Futhatk is used for the main implementation, and
+  all code that runs on the GPU, while Rust and C are used for some
+  host-side code, like loading object files and showing an SDL2
+  window.
 
 ** SDL2
-   On Linux, statically compiled SDL2 is included in [[deps/SDL2/]].
+   On Linux, statically compiled SDL2 is included in [[./deps/SDL2/]].
 
    On Windows you'll have to install SDL2 yourself. Using MSYS2
    (mingw) is recommended (yay pacman!). You may have to update your
@@ -36,7 +45,7 @@ in [[https://futhark-lang.org/][Futhark]]
   On Linux, run with ~./main~. On Windows, use just ~main.exe~ instead.
 
   #+BEGIN_EXAMPLE
-  $ ./main -o assets/CornellBox-Sphere.obj
+  $ ./main -o assets/CornellBox-Original.obj
   Using OpenCL device: Ellesmere
   Use -d or -i to change this.
   no of triangles: 2188
