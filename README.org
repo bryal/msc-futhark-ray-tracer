@@ -53,6 +53,8 @@ in [[https://futhark-lang.org/][Futhark]]
    - n, m :: Disable / enable accumulation.
    - i, k :: Increase / decrease aperture size.
    - o, l :: Increase / decrease focal distance.
+   - t :: Toggle LIDAR sensor.
+   - 8, 9, 0 :: Self-transmitter: flash / scanning / none.
 * Attributions
   Much of the windowing code is based on [[https://github.com/diku-dk/lys][lys]], owned by DIKU and
   licensed under the ISC license (see [[./LICENSE-ISC][LICENSE-ISC]]).
