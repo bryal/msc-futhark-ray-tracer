@@ -6,6 +6,25 @@ import "state"
 import "integrator"
 import "sdl"
 
+-- Spectral sensitivities of the camera sensor, approximated with normal distributions.
+--
+-- Possibly helpful data:
+--   Jiang's paper and database:
+--     http://www.gujinwei.org/research/camspec/camspec.pdf
+--     http://www.gujinwei.org/research/camspec/db.html
+--   Some database (with plotted JPGs!) from University of Tokyo:
+--     https://nae-lab.org/~rei/research/cs/zhao/database.html
+--
+-- For prototyping purposes we've (arbitrarily) chosen to model the
+-- Canon 400D, measured in the above UoT
+-- database. https://nae-lab.org/~rei/research/cs/zhao/files/canon_400d.jpg
+let camera_sensor: sensor =
+  [ ({ mu = 455, sigma = 22 }, mkvec3 0 0 1)
+  , ({ mu = 535, sigma = 32 }, mkvec3 0 1 0)
+  , ({ mu = 610, sigma = 26 }, mkvec3 1 0 0) ]
+let lidar_sensor: sensor =
+  [ ({ mu = 1550, sigma = 10 }, mkvec3 1 0 0) ]
+
 type text_content = (u32, u32, u32, f32, f32, u32)
 
 entry grab_mouse: bool = false
@@ -33,8 +52,9 @@ entry init (_seed: u32)
              , origin = mkvec3 0 0.8 1.8
              , aperture = 0.0
              , focal_dist = 1.5
+             , offset_radius = 1.0
+             , sensor = copy camera_sensor
              , transmitter = #none }
-     , lidar_mode = false
      , scene = accelerate_scene raw_scene }
 
 entry resize (h: u32) (w: u32) (s: state): state =
@@ -104,7 +124,12 @@ entry key (e: i32) (key: i32) (s: state): state =
        then s with cam =
          (s.cam with focal_dist = f32.max 0.1 (s.cam.focal_dist / 1.14))
        else if key == SDLK_t
-       then s with lidar_mode = !s.lidar_mode
+       then s with cam =
+                (if length s.cam.sensor == 3
+                 then s.cam with sensor = copy lidar_sensor
+                            with offset_radius = 0.0
+                 else s.cam with sensor = copy camera_sensor
+                            with offset_radius = 1)
               with mode = false
        else if key == SDLK_8
        then s with cam = (s.cam with transmitter = #flash { radius = 0.04, emission = map_intensities (* 1000) (blackbody_normalized 5500) })

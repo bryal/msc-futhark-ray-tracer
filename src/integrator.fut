@@ -1,10 +1,7 @@
-import "../lib/github.com/diku-dk/statistics/statistics"
 import "shapes"
 import "material"
 import "state"
 import "direct"
-
-module stat = mk_statistics f32
 
 
 let color (lr: lightray)
@@ -56,54 +53,22 @@ let color (lr: lightray)
 
 let one_sample_pixel (scene: accel_scene)
                      (cam: camera)
-                     (lidar_mode: bool)
                      (ambience: spectrum)
                      (w: f32, h: f32)
                      (j: u32, i: u32)
                      (rng: rnge)
                    : vec3 =
-  -- Spectral sensitivities of the camera sensor, approximated with normal distributions.
-  --
-  -- Possibly helpful data:
-  --   Jiang's paper and database:
-  --     http://www.gujinwei.org/research/camspec/camspec.pdf
-  --     http://www.gujinwei.org/research/camspec/db.html
-  --   Some database (with plotted JPGs!) from University of Tokyo:
-  --     https://nae-lab.org/~rei/research/cs/zhao/database.html
-  --
-  -- For prototyping purposes we've (arbitrarily) chosen to model the
-  -- Canon 400D, measured in the above UoT
-  -- database. https://nae-lab.org/~rei/research/cs/zhao/files/canon_400d.jpg
-  let camera_sensor =
-    [ ({ mu = 455, sigma = 22 }, mkvec3 0 0 1)
-    , ({ mu = 535, sigma = 32 }, mkvec3 0 1 0)
-    , ({ mu = 610, sigma = 26 }, mkvec3 1 0 0) ]
-  let lidar_sensor =
-    [ ({ mu = 1550, sigma = 10 }, mkvec3 1 0 0) ]
-  let sensor = if lidar_mode then lidar_sensor else camera_sensor
-  -- TODO: Should probably not just be 1/n. The ration of area of
-  --       distribution / area of all distributions?
-  let (rng, (wavelen_distr, wavelen_radiance_to_rgb)) =
-    random_select rng sensor
-  let wavelen_radiance_to_rgb =
-    vec3.scale (f32.i32 (length sensor)) wavelen_radiance_to_rgb
-  -- Sample an `x` value (wavelength) from the normal distribution with
-  -- inverse transform sampling of normal distribution
-  -- = probit
-  -- = quantile function of normal distribution
-  -- = inverse CDF of normal distribution
-  -- = statistics.sample
-  let (rng, p) = random_unit_exclusive rng
-  let wavelen = stat.sample (stat.mk_normal wavelen_distr) p
-  let r = get_ray cam
-                  (mkvec2 w h)
-                  (mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0))
-                  rng
+  let (rng, wl, wl_radiance_to_rgb) =
+    sample_camera_wavelength cam rng
+  let r = sample_camera_ray cam
+                            (mkvec2 w h)
+                            (mkvec2 (f32.u32 j) (h - f32.u32 i - 1.0))
+                            rng
   -- TODO: When lidar, create very thin spotlight based on the
   --       direction of the ray.
-  let lr = { r, wavelen }
+  let lr = { r, wavelen = wl }
   let scene = scene with lights = scene.lights ++ gen_transmitter cam r
-  in vec3.scale (color lr scene ambience rng) wavelen_radiance_to_rgb
+  in vec3.scale (color lr scene ambience rng) wl_radiance_to_rgb
 
 let sample_pixel (s: state)
                  (w: u32, h: u32)
@@ -114,7 +79,6 @@ let sample_pixel (s: state)
   let sample' rng =
     (vec3./) (one_sample_pixel s.scene
                                s.cam
-                               s.lidar_mode
                                s.ambience
                                (f32.u32 w, f32.u32 h)
                                (j, i)
