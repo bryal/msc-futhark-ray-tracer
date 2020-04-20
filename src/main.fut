@@ -44,8 +44,8 @@ entry step (dt: f32) (s: state): state =
   let time = s.time + dt
   let ((rng, img), n_frames) =
     if s.mode
-    then (sample_accum s, s.n_frames + 1)
-    else (sample_all s, 1)
+    then (sample_pixels_accum s, s.n_frames + 1)
+    else (sample_pixels s, 1)
   in s with img = img
        with rng = rng
        with time = time

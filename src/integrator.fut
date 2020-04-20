@@ -54,14 +54,14 @@ let color (lr: lightray)
                            rng
         case #nothing -> finish (radiance + ambience)
 
-let sample (scene: accel_scene)
-           (cam: camera)
-           (lidar_mode: bool)
-           (ambience: spectrum)
-           (w: f32, h: f32)
-           (j: u32, i: u32)
-           (rng: rnge)
-         : vec3 =
+let one_sample_pixel (scene: accel_scene)
+                     (cam: camera)
+                     (lidar_mode: bool)
+                     (ambience: spectrum)
+                     (w: f32, h: f32)
+                     (j: u32, i: u32)
+                     (rng: rnge)
+                   : vec3 =
   -- Spectral sensitivities of the camera sensor, approximated with normal distributions.
   --
   -- Possibly helpful data:
@@ -105,31 +105,41 @@ let sample (scene: accel_scene)
   let scene = scene with lights = scene.lights ++ gen_transmitter cam r
   in vec3.scale (color lr scene ambience rng) wavelen_radiance_to_rgb
 
-let sample_all (s: state): (rnge, [][]vec3) =
+let sample_pixel (s: state)
+                 (w: u32, h: u32)
+                 (j: u32, i: u32)
+                 (rng: rnge)
+               : vec3 =
+  let rngs = rnge.split_rng (i32.u32 s.samples) rng
+  let sample' rng =
+    (vec3./) (one_sample_pixel s.scene
+                               s.cam
+                               s.lidar_mode
+                               s.ambience
+                               (f32.u32 w, f32.u32 h)
+                               (j, i)
+                               rng)
+             (mkvec3_repeat (f32.u32 s.samples))
+  in reduce_comm (vec3.+)
+                 (mkvec3_repeat 0)
+                 (map sample' rngs)
+
+let sample_pixels (s: state): (rnge, [][]vec3) =
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
-  let rngs = rnge.split_rng (i32.u32 s.samples) s.rng
-  let rngss = map (rnge.split_rng (i32.u32 (w * h))) rngs
-  let sample' i j rngs =
-    let ix = i * i32.u32 w + j
-    let rng = rngs[ix]
-    in (vec3./) (sample s.scene
-                        s.cam
-                        s.lidar_mode
-                        s.ambience
-                        (f32.u32 w, f32.u32 h)
-                        (u32.i32 j, u32.i32 i)
-                        rng)
-                (mkvec3_repeat (f32.u32 s.samples))
-  let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
-              reduce_comm (vec3.+)
-                          (mkvec3_repeat 0)
-                          (map (sample' i j) rngss)
+  let rngs = rnge.split_rng (i32.u32 (w * h)) s.rng
+  let img = tabulate_2d (i32.u32 h) (i32.u32 w)
+                        (\i j -> let ix = i * i32.u32 w + j
+                                 let rng = rngs[ix]
+                                 in sample_pixel s
+                                                 (w, h)
+                                                 (u32.i32 j, u32.i32 i)
+                                                 rng)
   in (advance_rng s.rng, img)
 
-let sample_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
-  let (rng, img_new) = sample_all s
+let sample_pixels_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
+  let (rng, img_new) = sample_pixels s
   let nf = f32.u32 s.n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c
