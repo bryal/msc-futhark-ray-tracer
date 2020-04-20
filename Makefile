@@ -1,4 +1,4 @@
-LYS_BACKEND?=opencl
+LYS_BACKEND=opencl
 CC=clang
 
 PROG_FUT_DEPS:=$(shell find {lib,src} -name \*.fut)

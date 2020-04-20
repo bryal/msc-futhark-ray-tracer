@@ -47,6 +47,7 @@ entry init (_seed: u32)
      , n_frames = 1
      , ambience = bright_blue_sky
      , mode = false
+     , render_mode = #render_color
      , cam = { pitch = 0.0
              , yaw = 0.0
              , origin = mkvec3 0 0.8 1.8
@@ -65,11 +66,26 @@ entry step (dt: f32) (s: state): state =
   let ((rng, img), n_frames) =
     if s.mode
     then (sample_pixels_accum s, s.n_frames + 1)
-    else (sample_pixels s, 1)
+    else let channels = sensor_channel_visualizations s.cam.sensor
+         let (rng, ps) = sample_pixels s
+         let img = visualize_pixels s.render_mode channels ps
+         in ((rng, img), 1)
   in s with img = img
        with rng = rng
        with time = time
        with n_frames = n_frames
+
+let lidar_mode (s: state): state =
+  s with cam = (s.cam with sensor = copy lidar_sensor
+                      with offset_radius = 0.01)
+    with mode = false
+    with render_mode = #render_distance
+
+let camera_mode (s: state): state =
+  s with cam = (s.cam with sensor = copy camera_sensor
+                      with offset_radius = 1)
+    with mode = false
+    with render_mode = #render_color
 
 entry key (e: i32) (key: i32) (s: state): state =
   let keydown = e == 0 in
@@ -124,17 +140,13 @@ entry key (e: i32) (key: i32) (s: state): state =
        then s with cam =
          (s.cam with focal_dist = f32.max 0.1 (s.cam.focal_dist / 1.14))
        else if key == SDLK_t
-       then s with cam =
-                (if length s.cam.sensor == 3
-                 then s.cam with sensor = copy lidar_sensor
-                            with offset_radius = 0.0
-                 else s.cam with sensor = copy camera_sensor
-                            with offset_radius = 1)
-              with mode = false
+       then if length s.cam.sensor == 3
+            then lidar_mode s
+            else camera_mode s
        else if key == SDLK_8
-       then s with cam = (s.cam with transmitter = #flash { radius = 0.04, emission = map_intensities (* 1000) (blackbody_normalized 5500) })
+       then s with cam = (s.cam with transmitter = #flash { radius = 0.05, emission = map_intensities (* 1000) (blackbody_normalized 5500) })
        else if key == SDLK_9
-       then s with cam = (s.cam with transmitter = #scanning { radius = 0.04, theta = from_deg 2, emission = uniform_spectrum 1500 })
+       then s with cam = (s.cam with transmitter = #scanning { radius = 0.01, theta = from_deg 3, emission = uniform_spectrum 1500 })
        else if key == SDLK_0
        then s with cam = (s.cam with transmitter = #none)
        else if key == SDLK_p

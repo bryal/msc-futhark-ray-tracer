@@ -36,6 +36,11 @@ let random_in_triangle (rng: rnge): (rnge, (f32, f32)) =
   let su = f32.sqrt u
   in (rng, (1 - su, v * su))
 
-let random_select [n] 'a (rng: rnge) (xs: [n]a): (rnge, a) =
+let random_select' [n] 'a (rng: rnge) (xs: [n]a): (rnge, i32, a) =
   let (rng, n) = rnge.rand rng
-  in (rng, unsafe xs[i32.u32 (n % u32.i32 (length xs))])
+  let i = i32.u32 (n % u32.i32 (length xs))
+  in (rng, i, unsafe xs[i])
+
+let random_select [n] 'a (rng: rnge) (xs: [n]a): (rnge, a) =
+  let (rng, _, a) = random_select' rng xs
+  in (rng, a)

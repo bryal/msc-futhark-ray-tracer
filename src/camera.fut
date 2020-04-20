@@ -13,6 +13,8 @@ type normal_dist = { mu: f32, sigma: f32 }
 
 type~ sensor = [](normal_dist, vec3)
 
+let sensor_channel_visualizations: sensor -> []vec3 = map (.1)
+
 type transmitter = #flash { radius: f32, emission: spectrum }
                  | #scanning { radius: f32, theta: angle, emission: spectrum }
                  | #none
@@ -48,19 +50,17 @@ let turn_camera (cam: camera) (pitch: f32) (yaw: f32): camera =
       with yaw = (cam.yaw + yaw) % (2*f32.pi)
 
 let sample_camera_wavelength (cam: camera) (rng: rnge)
-                           : (rnge, f32, vec3) =
+                           : (rnge, f32, i32) =
   -- TODO: Should probably not just be 1/n. The ration of area of
   --       distribution / area of all distributions?
-  let (rng, (wavelen_distr, wavelen_radiance_to_rgb)) =
-    random_select rng cam.sensor
-  let wavelen_radiance_to_rgb =
-    vec3.scale (f32.i32 (length cam.sensor)) wavelen_radiance_to_rgb
+  let (rng, channel_i, (wavelen_distr, _)) =
+    random_select' rng cam.sensor
   -- Sample an `x` value (wavelength) from the normal distribution
   -- with inverse transform sampling of normal distribution
   -- (aka. probit / quantile function)
   let (rng, p) = random_unit_exclusive rng
   let wavelen = stat.sample (stat.mk_normal wavelen_distr) p
-  in (rng, wavelen, wavelen_radiance_to_rgb)
+  in (rng, wavelen, channel_i)
 
 let sample_camera_ray (cam: camera) (wh: vec2) (ji: vec2) (rng: rnge): ray =
   let ratio = wh.x / wh.y
