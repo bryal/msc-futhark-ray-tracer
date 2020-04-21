@@ -128,6 +128,7 @@ let visualize_pixels [n] [m]
                      (channels: []vec3)
                      (pixels_samples: [n][m][]pixel_sample)
                    : [n][m]vec3 =
+  -- HSV to RGB, using max value and saturation.
   let hue_to_rgb h =
     let h' = h * 6
     let x = 1 - f32.abs (h' % 2 - 1)
@@ -164,7 +165,7 @@ let visualize_pixels [n] [m]
   in map (map visualize) pixels_samples
 
 let sample_pixels_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
-  let channels = sensor_channel_visualizations s.cam.sensor
+  let channels = sensor_channel_visualizations s.cam.conf.sensor
   let (rng, img_new) = map_snd (visualize_pixels s.render_mode channels)
                                (sample_pixels s)
   let nf = f32.u32 s.n_frames

@@ -16,5 +16,6 @@ type~ state =
   , ambience: spectrum
   , mode: bool
   , render_mode: render_mode
+  , cam_conf_id: u32
   , cam: camera
   , scene: accel_scene }
