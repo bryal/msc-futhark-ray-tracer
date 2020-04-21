@@ -1,3 +1,4 @@
+import "../lib/github.com/diku-dk/sorts/insertion_sort"
 import "shapes"
 import "material"
 import "state"
@@ -95,10 +96,7 @@ let sample_pixel (s: state)
     one_sample_pixel s.scene s.cam s.ambience
                      (f32.u32 w, f32.u32 h) (j, i)
                      rng
-  in radix_sort_float_by_key (.distance)
-                             f32.num_bits
-                             f32.get_bit
-                             (flatten (map sample' rngs))
+  in flatten (map sample' rngs)
 
 let sample_pixels (s: state): (rnge, [][][]pixel_sample) =
   let (w, h) = s.dimensions
@@ -139,12 +137,12 @@ let visualize_pixels [n] [m]
     match render_mode
     case #render_distance ->
       let (min_d, max_d) = (0.5, 10)
-      let ss = filter (\s -> s.intensity > 0
+      let distance_to_hue d = 0.85 * (d - min_d) / (max_d - min_d)
+      let ss = samples
+            |> filter (\s -> s.intensity > 0
                              && s.distance > min_d
                              && s.distance < max_d)
-                      samples
-      let distance_to_hue d = 0.85 * (d - min_d) / (max_d - min_d)
-        -- 0.9 * (2 / (1 + f32.exp (-0.5 * d)) - 1)
+            |> insertion_sort (\a b -> a.distance <= b.distance)
       in if null ss
          then mkvec3 0 0 0
          else hue_to_rgb (distance_to_hue (head ss).distance)
