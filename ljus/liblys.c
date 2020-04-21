@@ -227,10 +227,16 @@ void do_sdl(
     struct futhark_context *fut = ctx->fut;
 
     ctx->last_time = get_wall_time();
+    float cam_pitch = 0.0;
+    float cam_yaw = 0.0;
+    float cam_origin_[3] = { 0.0f, 0.8f, 1.8f };
+    struct futhark_f32_1d* cam_origin =
+        futhark_new_f32_1d(ctx->fut, cam_origin_, 3);
     futhark_entry_init(
         fut, &ctx->state, (uint32_t)get_wall_time(),
         ctx->height, ctx->width,
-        triangle_data, triangle_mats, mat_data);
+        triangle_data, triangle_mats, mat_data,
+        cam_pitch, cam_yaw, cam_origin);
 
     int flags = 0;
     if (allow_resize) {

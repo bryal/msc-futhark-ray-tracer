@@ -40,6 +40,9 @@ entry init (_seed: u32)
            (tri_geoms: [][3][3]f32)
            (tri_mats: []u32)
            (mat_data: [][28]f32)
+           (cam_pitch: f32)
+           (cam_yaw: f32)
+           (cam_origin: [3]f32)
          : state =
   let raw_scene =
     { objs = parse_triangles tri_geoms tri_mats
@@ -55,9 +58,9 @@ entry init (_seed: u32)
      , mode = false
      , render_mode = #render_color
      , cam_conf_id = 0
-     , cam = { pitch = 0.0
-             , yaw = 0.0
-             , origin = mkvec3 0 0.8 1.8
+     , cam = { pitch = cam_pitch
+             , yaw = cam_yaw
+             , origin = vec3_from_array cam_origin
              , conf = visual_conf }
      , scene = accelerate_scene raw_scene }
 
