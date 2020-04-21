@@ -8,7 +8,7 @@
 
 #define _XOPEN_SOURCE
 #include "liblys.h"
-#include "main_printf.h"
+#include "tracer_printf.h"
 
 #include <inttypes.h>
 #include <assert.h>

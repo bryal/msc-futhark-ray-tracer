@@ -4,7 +4,7 @@
 #ifndef LIBLYS_HEADER
 #define LIBLYS_HEADER
 
-#include "main.h"
+#include "tracer.h"
 #include <stdio.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>

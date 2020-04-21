@@ -3,5 +3,5 @@
 *.o
 *.a
 /lib/
-/main
+**/main
 /build/

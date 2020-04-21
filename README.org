@@ -66,8 +66,9 @@ implemented in the GPGPU purely functional array programming language
    - 8, 9, 0 :: Self-transmitter: flash / scanning / none.
    - p :: Toggle sky.
 * Attributions
-  Much of the windowing code is based on [[https://github.com/diku-dk/lys][lys]], owned by DIKU and
-  licensed under the ISC license (see [[./ljus/LYS-LICENSE]]).
+  Much of the windowing code in the interactive demo is based on [[https://github.com/diku-dk/lys][lys]],
+  owned by DIKU and licensed under the ISC license (see
+  [[./demo-interactive/LYS-LICENSE]]).
 
   Our LBVH implementation takes a lot of inspiration from [[https://github.com/athas/raytracingthenextweekinfuthark][the one in
   here by Athas]].
