@@ -87,3 +87,5 @@ let uniform_spectrum (intensity: f32): spectrum =
   , b5 = (-1, 0) }
 
 let bright_blue_sky: spectrum = map_intensities (*5) (blackbody_normalized 17_000)
+
+let no_sky: spectrum = uniform_spectrum 0

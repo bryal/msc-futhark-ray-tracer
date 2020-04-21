@@ -46,12 +46,12 @@ entry init (_seed: u32)
     , mats = parse_mats mat_data }
   in { time = 0
      , dimensions = (w, h)
-     , subsampling = 2
+     , subsampling = 1
      , rng = minstd_rand.rng_from_seed [123]
      , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
      , samples = 1
      , n_frames = 1
-     , ambience = bright_blue_sky
+     , ambience = no_sky
      , mode = false
      , render_mode = #render_color
      , cam_conf_id = 0
