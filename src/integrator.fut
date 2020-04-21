@@ -9,6 +9,12 @@ type pixel_sample =
   , channel: i32
   , intensity: f32 }
 
+-- Enforcing a ceiling on the path length makes our integrator more
+-- approximative and not physically correct, unlike only using BSDF
+-- russian roulette to terminate, which is statistical and expected
+-- value that is correct. However, a max length improves performance,
+-- is easier to work with when using arrays and Futhark, and still
+-- looks close to accurate in most cases.
 let path_len: i32 = 16
 
 type path = [path_len]{ distance: f32, radiance: f32 }
