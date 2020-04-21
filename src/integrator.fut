@@ -104,14 +104,14 @@ let sample_pixels (s: state): (rnge, [][][]pixel_sample) =
                , (h + s.subsampling - 1) / s.subsampling)
   let rngs = rnge.split_rng (i32.u32 (w * h)) s.rng
   let n = i32.u32 s.samples * path_len
-  let img = tabulate_2d (i32.u32 h) (i32.u32 w)
-                        (\i j -> let ix = i * i32.u32 w + j
-                                 let rng = rngs[ix]
-                                 in sample_pixel s
-                                                 (w, h)
-                                                 (u32.i32 j, u32.i32 i)
-                                                 rng
-                                    :> [n]pixel_sample)
+  let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
+    let ix = i * i32.u32 w + j
+    let rng = rngs[ix]
+    in sample_pixel s
+                    (w, h)
+                    (u32.i32 j, u32.i32 i)
+                    rng
+       :> [n]pixel_sample
   in (advance_rng s.rng, img)
 
 -- If rendering lidar data, convert to color based on distance of
@@ -132,7 +132,9 @@ let visualize_pixels [n] [m]
        case 3 -> mkvec3 0 x 1
        case 4 -> mkvec3 x 0 1
        case _ -> mkvec3 1 0 x
+
   let samples_per_pixel = length (pixels_samples[0,0]) / path_len
+
   let visualize (samples: []pixel_sample): vec3 =
     match render_mode
     case #render_distance ->
@@ -152,6 +154,7 @@ let visualize_pixels [n] [m]
                      (mkvec3_repeat 0)
                      (map (\s -> vec3.scale s.intensity channels[s.channel])
                           samples)
+
   in map (map visualize) pixels_samples
 
 let sample_pixels_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
