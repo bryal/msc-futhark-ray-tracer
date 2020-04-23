@@ -6,6 +6,7 @@ import "state"
 import "integrator"
 import "sdl"
 
+
 let lidar_conf: camera_config =
   { aperture = 0
   , focal_dist = 1
@@ -31,12 +32,19 @@ let visual_flash_conf: camera_config = visual_conf with transmitter =
          , emission = map_intensities (* 1000)
                                       (blackbody_normalized 5500) }
 
+-- entry sample_pixels_out (s: state): ([][][]pixel_sample) =
+
+entry sample_pixels_visualize_ (s: state): [][][3]f32 =
+  map (map vec3_to_arr) (sample_pixels_visualize s).1
+
 type text_content = (u32, u32, u32, f32, f32, u32)
 
 entry grab_mouse: bool = false
 
 entry init (_seed: u32)
            (h: u32) (w: u32)
+           (samples_per_pixel: u32)
+           (cam_conf_id: u32)
            (tri_geoms: [][3][3]f32)
            (tri_mats: []u32)
            (mat_data: [][28]f32)
@@ -47,21 +55,25 @@ entry init (_seed: u32)
   let raw_scene =
     { objs = parse_triangles tri_geoms tri_mats
     , mats = parse_mats mat_data }
+  let (render_mode, conf) =
+    if cam_conf_id == 0      then (#render_color, visual_conf)
+    else if cam_conf_id == 1 then (#render_color, visual_flash_conf)
+    else                          (#render_distance, lidar_conf)
   in { time = 0
      , dimensions = (w, h)
      , subsampling = 1
      , rng = minstd_rand.rng_from_seed [123]
      , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
-     , samples = 1
+     , samples = samples_per_pixel
      , n_frames = 1
      , ambience = no_sky
      , mode = false
-     , render_mode = #render_color
-     , cam_conf_id = 0
+     , render_mode
+     , cam_conf_id
      , cam = { pitch = cam_pitch
              , yaw = cam_yaw
              , origin = vec3_from_array cam_origin
-             , conf = visual_conf }
+             , conf }
      , scene = accelerate_scene raw_scene }
 
 entry resize (h: u32) (w: u32) (s: state): state =

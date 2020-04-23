@@ -3,7 +3,7 @@ CC=clang
 
 PROG_FUT_DEPS:=$(shell find {lib,src} -name \*.fut)
 
-NOWARN_CFLAGS=-std=c11 -O2 -no-pie
+NOWARN_CFLAGS=-std=c11 -O2 -fPIC
 CFLAGS=$(NOWARN_CFLAGS)  -Wall -Wextra -Wconversion -pedantic -DLYS_BACKEND_$(BACKEND)
 LDFLAGS=-lm -lfreetype -lpthread
 INCLUDE=-I./build
@@ -32,28 +32,27 @@ endif
 
 ifeq ($(OS),Windows_NT)
 	LDFLAGS += -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lWs2_32 -lUserenv
-	MAIN=main.exe
-	TRACER=tracer.lib
-	LJUS=ljus.lib
+	EXE=.exe
 else
 	LDFLAGS += -L./deps/SDL2/lib -ldl -lSDL2 -lSDL2_ttf
 	INCLUDE += -I./deps/SDL2/include
-	MAIN=main
-	TRACER=libtracer.a
-	LJUS=libljus.a
+	EXE=
 endif
 
 .PHONY: all
-all: demo-interactive/$(MAIN) $(TRACER)
+all: main-interactive$(EXE) main-save$(EXE) libtracer.a
 
 .PHONY: lib
-lib: $(TRACER)
+lib: libtracer.a
 
-demo-interactive/$(MAIN): build/tracer_printf.h demo-interactive/liblys.c demo-interactive/liblys.h $(TRACER)
-	$(CC) demo-interactive/liblys.c $(TRACER) -o $@ $(CFLAGS) -I./demo-interactive $(INCLUDE) $(LDFLAGS)
+main-interactive$(EXE): build/tracer_printf.h demo-interactive/liblys.c demo-interactive/liblys.h libtracer.a build/libljus.a
+	$(CC) demo-interactive/liblys.c build/libljus.a libtracer.a -o $@ $(CFLAGS) -I./demo-interactive $(INCLUDE) $(LDFLAGS)
 
-$(TRACER): build/tracer.o build/$(LJUS)
-	cd build && ar x $(LJUS) && ar rcs ../libtracer.a *.o
+main-save$(EXE): $(shell find demo-save/src -name \*.rs) demo-save/Cargo.toml demo-save/.cargo/config
+	cd demo-save && cargo build --release && cp target/release/demo-save$(EXE) ../main-save$(EXE)
+
+libtracer.a: build/tracer.o
+	ar rcs libtracer.a build/tracer.o
 
 # We do not want warnings and such for the generated code.
 build/tracer.o: build/tracer.c
@@ -68,14 +67,14 @@ build/tracer.h: build/tracer.c
 build/tracer_printf.h: build/tracer.c demo-interactive/gen_printf.py
 	python3 demo-interactive/gen_printf.py $@ $<
 
-build/$(LJUS): $(shell find ljus/src -name \*.rs) ljus/Cargo.toml
-	cd ljus && cargo build --lib --release && cp target/release/$(LJUS) ../build/$(LJUS)
+build/libljus.a: $(shell find ljus/src -name \*.rs) ljus/Cargo.toml
+	cd ljus && cargo build --lib --release && cp target/release/libljus.a ../build/libljus.a
 
-run: demo-interactive/$(MAIN)
-	./demo-interactive/$(MAIN) -o assets/SpectrumSphere.obj
+run: main-interactive$(EXE)
+	./main-interactive$(EXE) -o assets/SpectrumSphere.obj
 
 clean:
-	rm -rf demo-interactive/$(MAIN) build
+	rm -rf libtracer.a main-interactive$(EXE) main-save$(EXE) build
 
 clean-full: clean
 	cd ljus && cargo clean

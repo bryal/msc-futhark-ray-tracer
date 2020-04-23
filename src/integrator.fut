@@ -106,7 +106,7 @@ let sample_pixel (s: state)
 
 let sample_pixels (s: state): (rnge, [][][]pixel_sample) =
   let (w, h) = s.dimensions
-  let (w, h) = ( (w + s.subsampling - 1) / s.subsampling
+  let (w, h) = ( (w + s .subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
   let rngs = rnge.split_rng (i32.u32 (w * h)) s.rng
   let n = i32.u32 s.samples * path_len
@@ -164,10 +164,13 @@ let visualize_pixels [n] [m]
 
   in map (map visualize) pixels_samples
 
-let sample_pixels_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
+let sample_pixels_visualize (s: state): (rnge, [][]vec3) =
   let channels = sensor_channel_visualizations s.cam.conf.sensor
-  let (rng, img_new) = map_snd (visualize_pixels s.render_mode channels)
-                               (sample_pixels s)
+  in map_snd (visualize_pixels s.render_mode channels)
+             (sample_pixels s)
+
+let sample_pixels_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
+  let (rng, img_new) = sample_pixels_visualize s
   let nf = f32.u32 s.n_frames
   let merge acc c = vec3.scale ((nf - 1) / nf) acc
                     vec3.+ vec3.scale (1 / nf) c

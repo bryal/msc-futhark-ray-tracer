@@ -38,7 +38,7 @@ pub unsafe extern "C" fn free_obj_data(tri_data: *mut f32, tri_mats: *mut u32, m
     Box::from_raw(mat_data);
 }
 
-fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
+pub fn load(obj_path: &Path) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
     let (models, materials) = tobj::load_obj(obj_path).expect("Load obj file");
     let (mut tris, mut tri_mats) = (Vec::new(), Vec::new());
     for mesh in models.into_iter().map(|m| m.mesh) {

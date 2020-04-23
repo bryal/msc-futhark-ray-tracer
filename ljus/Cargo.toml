@@ -8,4 +8,4 @@ edition = "2018"
 tobj = "0.1.12"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
