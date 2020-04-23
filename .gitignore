@@ -5,3 +5,5 @@
 /lib/
 **/main
 /build/
+/assets/*
+/main*
