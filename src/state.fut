@@ -6,8 +6,7 @@ import "scene"
 type render_mode = #render_distance | #render_color
 
 type~ state =
-  { time: f32
-  , dimensions: (u32, u32)
+  { dimensions: (u32, u32)
   , subsampling: u32
   , rng: minstd_rand.rng
   , img: [][]vec3

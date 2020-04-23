@@ -63,8 +63,7 @@ entry init (_seed: u32)
     if cam_conf_id == 0      then (#render_color, visual_conf)
     else if cam_conf_id == 1 then (#render_color, visual_flash_conf)
     else                          (#render_distance, lidar_conf)
-  in { time = 0
-     , dimensions = (w, h)
+  in { dimensions = (w, h)
      , subsampling = 1
      , rng = minstd_rand.rng_from_seed [123]
      , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
@@ -82,15 +81,13 @@ entry init (_seed: u32)
 entry resize (h: u32) (w: u32) (s: state): state =
     s with dimensions = (w, h) with mode = false
 
-entry step (dt: f32) (s: state): state =
-  let time = s.time + dt
+entry step (_dt: f32) (s: state): state =
   let ((rng, img), n_frames) =
     if s.mode && s.n_frames > 0
     then (sample_frame_accum s, s.n_frames + 1)
     else (sample_frame s, 1)
   in s with img = img
        with rng = rng
-       with time = time
        with n_frames = n_frames
 
 entry key (e: i32) (key: i32) (s: state): state =
