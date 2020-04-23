@@ -48,7 +48,7 @@ lib: libtracer.a
 main-interactive$(EXE): build/tracer_printf.h demo-interactive/liblys.c demo-interactive/liblys.h libtracer.a build/libljus.a
 	$(CC) demo-interactive/liblys.c build/libljus.a libtracer.a -o $@ $(CFLAGS) -I./demo-interactive $(INCLUDE) $(LDFLAGS)
 
-main-save$(EXE): $(shell find demo-save/src -name \*.rs) demo-save/Cargo.toml demo-save/.cargo/config
+main-save$(EXE): $(shell find demo-save/src -name \*.rs) demo-save/Cargo.toml demo-save/.cargo/config libtracer.a
 	cd demo-save && cargo build --release && cp target/release/demo-save$(EXE) ../main-save$(EXE)
 
 libtracer.a: build/tracer.o

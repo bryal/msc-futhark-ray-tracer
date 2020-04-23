@@ -10,7 +10,6 @@ type~ state =
   , dimensions: (u32, u32)
   , subsampling: u32
   , rng: minstd_rand.rng
-  , samples: u32
   , img: [][]vec3
   , n_frames: u32
   , ambience: spectrum

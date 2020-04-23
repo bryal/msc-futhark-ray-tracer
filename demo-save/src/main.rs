@@ -54,7 +54,6 @@ extern "C" {
         seed: u32,
         h: u32,
         w: u32,
-        samples_per_pixel: u32,
         cam_conf_id: u32,
         tri_geoms: *const futhark_f32_3d,
         tri_mats: *const futhark_u32_1d,
@@ -64,10 +63,17 @@ extern "C" {
         cam_origin: *const futhark_f32_1d,
     ) -> i32;
 
-    fn futhark_entry_sample_pixels_visualize_(
+    fn futhark_entry_sample_frame_(
         ctx: *mut futhark_context,
         out: *mut *mut futhark_f32_3d,
         state: *const futhark_opaque_state,
+    ) -> i32;
+
+    fn futhark_entry_sample_n_frames(
+        ctx: *mut futhark_context,
+        out: *mut *mut futhark_f32_3d,
+        state: *const futhark_opaque_state,
+        n: u32,
     ) -> i32;
 
     fn futhark_values_f32_3d(
@@ -99,15 +105,13 @@ fn main() {
         let mut cam_origin = [0.0, 0.8, 1.8];
         let cam_origin = futhark_new_f32_1d(ctx, cam_origin.as_mut_ptr(), 3);
         let mut state: *mut futhark_opaque_state = mem::zeroed();
-        let samples_per_pixel = 4;
-        let cam_conf_id = 2;
+        let cam_conf_id = 0;
         futhark_entry_init(
             ctx,
             &mut state,
             0,
             height,
             width,
-            samples_per_pixel,
             cam_conf_id,
             fut_tri_data,
             fut_tri_mats,
@@ -118,7 +122,7 @@ fn main() {
         );
 
         let mut fut_mat: *mut futhark_f32_3d = mem::zeroed();
-        futhark_entry_sample_pixels_visualize_(ctx, &mut fut_mat, state);
+        futhark_entry_sample_n_frames(ctx, &mut fut_mat, state, 100);
 
         let mut data = vec![0f32; (width * height) as usize * 3];
         futhark_values_f32_3d(ctx, fut_mat, data.as_mut_ptr());

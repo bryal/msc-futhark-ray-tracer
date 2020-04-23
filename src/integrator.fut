@@ -70,7 +70,7 @@ let path_trace (lr: lightray)
                            rng
         case #nothing -> finish (path with [i] = { distance = f32.inf, radiance = ambience })
 
-let one_sample_pixel (scene: accel_scene)
+let sample_pixel (scene: accel_scene)
                      (cam: camera)
                      (ambience: spectrum)
                      (w: f32, h: f32)
@@ -92,32 +92,19 @@ let one_sample_pixel (scene: accel_scene)
                                      , channel })
          (path_trace lr scene ambience rng)
 
-let sample_pixel (s: state)
-                 (w: u32, h: u32)
-                 (j: u32, i: u32)
-                 (rng: rnge)
-               : []pixel_sample =
-  let rngs = rnge.split_rng (i32.u32 s.samples) rng
-  let sample' rng =
-    one_sample_pixel s.scene s.cam s.ambience
-                     (f32.u32 w, f32.u32 h) (j, i)
-                     rng
-  in flatten (map sample' rngs)
-
-let sample_pixels (s: state): (rnge, [][][]pixel_sample) =
+let sample_pixels (s: state): (rnge, [][][path_len]pixel_sample) =
   let (w, h) = s.dimensions
   let (w, h) = ( (w + s .subsampling - 1) / s.subsampling
                , (h + s.subsampling - 1) / s.subsampling)
   let rngs = rnge.split_rng (i32.u32 (w * h)) s.rng
-  let n = i32.u32 s.samples * path_len
+  let sample' rng ji =
+    sample_pixel s.scene s.cam s.ambience
+                 (f32.u32 w, f32.u32 h) ji
+                 rng
   let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
     let ix = i * i32.u32 w + j
     let rng = rngs[ix]
-    in sample_pixel s
-                    (w, h)
-                    (u32.i32 j, u32.i32 i)
-                    rng
-       :> [n]pixel_sample
+    in sample' rng (u32.i32 j, u32.i32 i)
   in (advance_rng s.rng, img)
 
 -- If rendering lidar data, convert to color based on distance of
@@ -140,8 +127,6 @@ let visualize_pixels [n] [m]
        case 4 -> mkvec3 x 0 1
        case _ -> mkvec3 1 0 x
 
-  let samples_per_pixel = length (pixels_samples[0,0]) / path_len
-
   let visualize (samples: []pixel_sample): vec3 =
     match render_mode
     case #render_distance ->
@@ -156,7 +141,7 @@ let visualize_pixels [n] [m]
          then mkvec3 0 0 0
          else hue_to_rgb (distance_to_hue (head ss).distance)
     case #render_color ->
-      vec3.scale (f32.i32 (length channels) / f32.i32 samples_per_pixel)
+      vec3.scale (f32.i32 (length channels))
       <| reduce_comm (vec3.+)
                      (mkvec3_repeat 0)
                      (map (\s -> vec3.scale s.intensity channels[s.channel])
@@ -164,14 +149,21 @@ let visualize_pixels [n] [m]
 
   in map (map visualize) pixels_samples
 
-let sample_pixels_visualize (s: state): (rnge, [][]vec3) =
+let sample_frame (s: state): (rnge, [][]vec3) =
   let channels = sensor_channel_visualizations s.cam.conf.sensor
   in map_snd (visualize_pixels s.render_mode channels)
              (sample_pixels s)
 
-let sample_pixels_accum [m] [n] (s: state): (rnge, [m][n]vec3) =
-  let (rng, img_new) = sample_pixels_visualize s
-  let nf = f32.u32 s.n_frames
-  let merge acc c = vec3.scale ((nf - 1) / nf) acc
-                    vec3.+ vec3.scale (1 / nf) c
-  in (rng, map2 (map2 merge) s.img (img_new :> [m][n]vec3))
+let sample_frame_accum [m] [n]
+                       (s: state)
+                     : (rnge, [m][n]vec3) =
+  let (rng, img_new) = sample_frame s
+  let n_frames = f32.u32 s.n_frames
+  let merge_all merge_one =
+    (rng, map2 (map2 merge_one) s.img (img_new :> [m][n]vec3))
+  in match s.render_mode
+     case #render_distance ->
+       merge_all (\acc c -> if vec3.norm acc > 0 then acc else c)
+     case #render_color ->
+       merge_all (\acc c -> (vec3.+) (vec3.scale ((n_frames - 1) / n_frames) acc)
+                                     (vec3.scale (1 / n_frames) c))

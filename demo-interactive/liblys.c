@@ -230,14 +230,12 @@ void do_sdl(
     float cam_pitch = 0.0;
     float cam_yaw = 0.0;
     float cam_origin_[3] = { 0.0f, 0.8f, 1.8f };
-    uint32_t samples_per_pixel = 1;
     uint32_t cam_conf_id = 0;
     struct futhark_f32_1d* cam_origin =
         futhark_new_f32_1d(ctx->fut, cam_origin_, 3);
     futhark_entry_init(
         fut, &ctx->state, (uint32_t)get_wall_time(),
         ctx->height, ctx->width,
-        samples_per_pixel,
         cam_conf_id,
         triangle_data, triangle_mats, mat_data,
         cam_pitch, cam_yaw, cam_origin);
@@ -257,7 +255,7 @@ void do_sdl(
     ctx->running = 1;
     ctx->mouse_grabbed = 0;
 
-    FUT_CHECK(ctx->fut, futhark_entry_grab_mouse(ctx->fut, &ctx->grab_mouse));
+    // FUT_CHECK(ctx->fut, futhark_entry_grab_mouse(ctx->fut, &ctx->grab_mouse));
     if (ctx->grab_mouse) {
         assert(SDL_SetRelativeMouseMode(1) == 0);
         ctx->mouse_grabbed = 1;

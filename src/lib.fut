@@ -32,18 +32,22 @@ let visual_flash_conf: camera_config = visual_conf with transmitter =
          , emission = map_intensities (* 1000)
                                       (blackbody_normalized 5500) }
 
--- entry sample_pixels_out (s: state): ([][][]pixel_sample) =
+entry sample_frame_ (s: state): [][][3]f32 =
+  map (map vec3_to_arr) (sample_frame s).1
 
-entry sample_pixels_visualize_ (s: state): [][][3]f32 =
-  map (map vec3_to_arr) (sample_pixels_visualize s).1
+entry sample_n_frames (s: state) (n: u32): [][][3]f32 =
+  let (rng, img) = sample_frame s
+  let s = s with n_frames = 1 with rng = rng with img = img
+  let s = loop (s)
+          while s.n_frames < n
+          do let (rng, img) = sample_frame_accum s
+             in (s with img = img with rng = rng with n_frames = s.n_frames + 1)
+  in map (map vec3_to_arr) s.img
 
-type text_content = (u32, u32, u32, f32, f32, u32)
-
-entry grab_mouse: bool = false
+type text_content = (u32, u32, f32, f32, u32)
 
 entry init (_seed: u32)
            (h: u32) (w: u32)
-           (samples_per_pixel: u32)
            (cam_conf_id: u32)
            (tri_geoms: [][3][3]f32)
            (tri_mats: []u32)
@@ -64,8 +68,7 @@ entry init (_seed: u32)
      , subsampling = 1
      , rng = minstd_rand.rng_from_seed [123]
      , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
-     , samples = samples_per_pixel
-     , n_frames = 1
+     , n_frames = 0
      , ambience = no_sky
      , mode = false
      , render_mode
@@ -82,12 +85,9 @@ entry resize (h: u32) (w: u32) (s: state): state =
 entry step (dt: f32) (s: state): state =
   let time = s.time + dt
   let ((rng, img), n_frames) =
-    if s.mode
-    then (sample_pixels_accum s, s.n_frames + 1)
-    else let channels = sensor_channel_visualizations s.cam.conf.sensor
-         let (rng, ps) = sample_pixels s
-         let img = visualize_pixels s.render_mode channels ps
-         in ((rng, img), 1)
+    if s.mode && s.n_frames > 0
+    then (sample_frame_accum s, s.n_frames + 1)
+    else (sample_frame s, 1)
   in s with img = img
        with rng = rng
        with time = time
@@ -96,41 +96,37 @@ entry step (dt: f32) (s: state): state =
 entry key (e: i32) (key: i32) (s: state): state =
   let keydown = e == 0 in
   if keydown
-  then if key == SDLK_e
-       then s with samples = s.samples * 2
-       else if key == SDLK_q
-       then s with samples =
-         if s.samples < 2 then 1 else s.samples / 2
-       else if key == SDLK_2
+  then if key == SDLK_2
        then s with subsampling = s.subsampling + 1
-              with mode = false
+              with n_frames = 0
        else if key == SDLK_1
        then s with subsampling = u32.max 1 (s.subsampling - 1)
-              with mode = false
+              with n_frames = 0
        else if key == SDLK_w
-       then s with cam = move_camera s.cam (mkvec3 0 0 1)
+       then s with cam = move_camera s.cam (mkvec3 0 0 1) with n_frames = 0
        else if key == SDLK_a
-       then s with cam = move_camera s.cam (mkvec3 (-1) 0 0)
+       then s with cam = move_camera s.cam (mkvec3 (-1) 0 0) with n_frames = 0
        else if key == SDLK_s
-       then s with cam = move_camera s.cam (mkvec3 0 0 (-1))
+       then s with cam = move_camera s.cam (mkvec3 0 0 (-1)) with n_frames = 0
        else if key == SDLK_d
-       then s with cam = move_camera s.cam (mkvec3 1 0 0)
+       then s with cam = move_camera s.cam (mkvec3 1 0 0) with n_frames = 0
        else if key == SDLK_UP
-       then s with cam = turn_camera s.cam (-0.1) 0.0
+       then s with cam = turn_camera s.cam (-0.1) 0.0 with n_frames = 0
        else if key == SDLK_DOWN
-       then s with cam = turn_camera s.cam 0.1 0.0
+       then s with cam = turn_camera s.cam 0.1 0.0 with n_frames = 0
        else if key == SDLK_RIGHT
-       then s with cam = turn_camera s.cam 0.0 0.1
+       then s with cam = turn_camera s.cam 0.0 0.1 with n_frames = 0
        else if key == SDLK_LEFT
-       then s with cam = turn_camera s.cam 0.0 (-0.1)
+       then s with cam = turn_camera s.cam 0.0 (-0.1) with n_frames = 0
        else if key == SDLK_x
-       then s with cam = move_camera s.cam (mkvec3 0 1 0)
+       then s with cam = move_camera s.cam (mkvec3 0 1 0) with n_frames = 0
        else if key == SDLK_z
-       then s with cam = move_camera s.cam (mkvec3 0 (-1) 0)
+       then s with cam = move_camera s.cam (mkvec3 0 (-1) 0) with n_frames = 0
        else if key == SDLK_SPACE
        then s with mode = !s.mode
+              with n_frames = 0
        else if key == SDLK_n
-       then s with mode = false
+       then s with mode = false with n_frames = 0
        else if key == SDLK_m
        then s with mode = true
        else if key == SDLK_i
@@ -156,7 +152,7 @@ entry key (e: i32) (key: i32) (s: state): state =
              case _ -> s with cam.conf = visual_conf
                          with cam_conf_id = 0
                          with render_mode = #render_color
-            ) with mode = false
+            ) with n_frames = 0
        else if key == SDLK_p
        then s with ambience = if s.ambience.b0.1 == 0
                               then bright_blue_sky
@@ -176,9 +172,9 @@ entry render (s: state): [][]argb.colour =
   in map (map vcol_to_argb) upscaled
 
 entry text_format: []u8 =
-  "FPS: %d\nSAMPLES: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f\nSUBSAMPLING: %d"
+  "FPS: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f\nSUBSAMPLING: %d"
 
 entry text_content (fps: f32) (s: state): text_content =
-  (u32.f32 fps, s.samples, s.n_frames, s.cam.conf.aperture, s.cam.conf.focal_dist, s.subsampling )
+  (u32.f32 fps, s.n_frames, s.cam.conf.aperture, s.cam.conf.focal_dist, s.subsampling )
 
 entry text_colour (_: state): argb.colour = argb.yellow
