@@ -2,9 +2,7 @@
 #![feature(vec_into_raw_parts)]
 #![feature(clamp)]
 
-extern crate image;
-extern crate ljus;
-
+use pcd_rs::{DataKind, PcdDeserialize, PcdSerialize, WriterBuilder};
 use std::mem;
 
 #[link(name = "tracer", kind = "static")]
@@ -15,6 +13,7 @@ extern "C" {
     type futhark_f32_1d;
     type futhark_f32_2d;
     type futhark_f32_3d;
+    type futhark_f32_4d;
     type futhark_context_config;
 
     fn futhark_context_config_new() -> *mut futhark_context_config;
@@ -48,6 +47,18 @@ extern "C" {
         dim2: i64,
     ) -> *mut futhark_f32_3d;
 
+    // fn futhark_values_f32_3d(
+    //     ctx: *mut futhark_context,
+    //     arr: *mut futhark_f32_3d,
+    //     out: *mut f32,
+    // ) -> i32;
+
+    fn futhark_values_f32_4d(
+        ctx: *mut futhark_context,
+        arr: *mut futhark_f32_4d,
+        out: *mut f32,
+    ) -> i32;
+
     fn futhark_entry_init(
         ctx: *mut futhark_context,
         out: *mut *mut futhark_opaque_state,
@@ -63,24 +74,42 @@ extern "C" {
         cam_origin: *const futhark_f32_1d,
     ) -> i32;
 
-    fn futhark_entry_sample_frame_(
+    // fn futhark_entry_sample_frame_(
+    //     ctx: *mut futhark_context,
+    //     out: *mut *mut futhark_f32_3d,
+    //     state: *const futhark_opaque_state,
+    // ) -> i32;
+
+    // fn futhark_entry_sample_n_frames(
+    //     ctx: *mut futhark_context,
+    //     out: *mut *mut futhark_f32_3d,
+    //     state: *const futhark_opaque_state,
+    //     n: u32,
+    // ) -> i32;
+
+    // fn futhark_entry_sample_pixels_(
+    //     ctx: *mut futhark_context,
+    //     distances: *mut *mut futhark_f32_3d,
+    //     channels: *mut *mut futhark_i32_3d,
+    //     intensities: *mut *mut futhark_f32_3d,
+    //     in0: *const futhark_opaque_state,
+    // ) -> i32;
+
+    fn futhark_entry_sample_points_(
         ctx: *mut futhark_context,
-        out: *mut *mut futhark_f32_3d,
+        out_state: *mut *mut futhark_opaque_state,
+        out_points: *mut *mut futhark_f32_4d,
         state: *const futhark_opaque_state,
     ) -> i32;
+}
 
-    fn futhark_entry_sample_n_frames(
-        ctx: *mut futhark_context,
-        out: *mut *mut futhark_f32_3d,
-        state: *const futhark_opaque_state,
-        n: u32,
-    ) -> i32;
+const PATH_LEN: usize = 16;
 
-    fn futhark_values_f32_3d(
-        ctx: *mut futhark_context,
-        arr: *mut futhark_f32_3d,
-        out: *mut f32,
-    ) -> i32;
+#[derive(Debug, PcdDeserialize, PcdSerialize, PartialEq)]
+struct Point {
+    x: f32,
+    y: f32,
+    z: f32,
 }
 
 fn main() {
@@ -105,7 +134,7 @@ fn main() {
         let mut cam_origin = [0.0, 0.8, 1.8];
         let cam_origin = futhark_new_f32_1d(ctx, cam_origin.as_mut_ptr(), 3);
         let mut state: *mut futhark_opaque_state = mem::zeroed();
-        let cam_conf_id = 0;
+        let cam_conf_id = 2;
         futhark_entry_init(
             ctx,
             &mut state,
@@ -121,17 +150,56 @@ fn main() {
             cam_origin,
         );
 
-        let mut fut_mat: *mut futhark_f32_3d = mem::zeroed();
-        futhark_entry_sample_n_frames(ctx, &mut fut_mat, state, 100);
+        // Capturing and saving a point cloud
+        //
+        let mut new_state: *mut futhark_opaque_state = mem::zeroed();
+        let mut fut_data: *mut futhark_f32_4d = mem::zeroed();
+        futhark_entry_sample_points_(ctx, &mut new_state, &mut fut_data, state);
+        // state = new_state;
 
-        let mut data = vec![0f32; (width * height) as usize * 3];
-        futhark_values_f32_3d(ctx, fut_mat, data.as_mut_ptr());
-
-        let bytes = data
+        let mut data = vec![[[0f32; 4]; PATH_LEN]; (width * height) as usize];
+        futhark_values_f32_4d(ctx, fut_data, data.as_mut_ptr() as *mut _);
+        let points = data
             .into_iter()
-            .map(|x| (x.clamp(0.0, 1.0) * 255.99) as u8)
-            .collect::<Vec<u8>>();
+            .filter_map(|path| {
+                path.iter()
+                    .cloned()
+                    .filter_map(|[x, y, z, intensity]| guard(intensity > 0.0, Point { x, y, z }))
+                    .next()
+            })
+            .collect::<Vec<Point>>();
 
-        image::save_buffer("out.png", &bytes, width, height, image::ColorType::Rgb8).unwrap();
+        let mut writer =
+            WriterBuilder::new(points.len() as u64, 1, Default::default(), DataKind::ASCII)
+                .expect("new WriterBuilder")
+                .create::<_, Point>("dump.pcd")
+                .expect("created path");
+        for point in points.iter() {
+            writer.push(&point).unwrap();
+        }
+        writer.finish().unwrap();
+
+        // Capturing and saving an image
+        //
+        // let mut fut_mat: *mut futhark_f32_3d = mem::zeroed();
+        // futhark_entry_sample_n_frames(ctx, &mut fut_mat, state, 100);
+        //
+        // let mut data = vec![0f32; (width * height) as usize * 3];
+        // futhark_values_f32_3d(ctx, fut_mat, data.as_mut_ptr());
+        //
+        // let bytes = data
+        //     .into_iter()
+        //     .map(|x| (x.clamp(0.0, 1.0) * 255.99) as u8)
+        //     .collect::<Vec<u8>>();
+        //
+        // image::save_buffer("out.png", &bytes, width, height, image::ColorType::Rgb8).unwrap();
+    }
+}
+
+fn guard<T>(predicate: bool, x: T) -> Option<T> {
+    if predicate {
+        Some(x)
+    } else {
+        None
     }
 }

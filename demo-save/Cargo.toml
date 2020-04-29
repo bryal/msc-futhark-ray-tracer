@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 ljus = { path = "../ljus" }
 image = "*"
+pcd-rs = "0.6"

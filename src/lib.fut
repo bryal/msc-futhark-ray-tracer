@@ -32,6 +32,17 @@ let visual_flash_conf: camera_config = visual_conf with transmitter =
          , emission = map_intensities (* 1000)
                                       (blackbody_normalized 5500) }
 
+-- entry sample_pixels_ (s: state): ([][][path_len]f32, [][][path_len]i32, [][][path_len]f32) =
+--   unzip3 (map (unzip3 <-< map (unzip3 <-< map (\{distance=d, channel=c, intensity=i} -> (d, c, i))))
+--               (sample_pixels s).1)
+
+entry sample_points_ (s: state): (state, [][][path_len][4]f32) =
+  let (rng, ps) = sample_points s
+  in ( s with rng = rng
+     , map (map (map (\{pos={x, y, z}, intensity} ->
+                        [x, y, z, intensity])))
+           ps )
+
 entry sample_frame_ (s: state): [][][3]f32 =
   map (map vec3_to_arr) (sample_frame s).1
 
