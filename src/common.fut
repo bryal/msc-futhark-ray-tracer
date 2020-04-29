@@ -23,6 +23,11 @@ module maybe = {
     match x
     case #just a -> #just a
     case #nothing -> y
+
+  let unwrap_or 'a (default: a) (x: maybe a): a =
+    match x
+    case #just a -> a
+    case #nothing -> default
 }
 
 type maybe 't = maybe.maybe t
@@ -31,3 +36,15 @@ let approx_zero (a: f32) (eps: f32): bool = a > -eps && a < eps
 
 let clamp ((min, max): (f32, f32)) (x: f32): f32 =
   f32.max min (f32.min max x)
+
+let minimum_by 'a (f: a -> f32) (xs: []a): maybe a =
+  if null xs
+  then #nothing
+  else #just (let y = head xs
+              in (.0)
+              <| loop (y, yv) = (y, f y)
+                 for x in xs
+                 do let xv = f x
+                    in if xv < yv
+                       then (x, xv)
+                       else (y, yv))

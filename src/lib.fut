@@ -32,19 +32,35 @@ let visual_flash_conf: camera_config = visual_conf with transmitter =
          , emission = map_intensities (* 1000)
                                       (blackbody_normalized 5500) }
 
--- entry sample_pixels_ (s: state): ([][][path_len]f32, [][][path_len]i32, [][][path_len]f32) =
---   unzip3 (map (unzip3 <-< map (unzip3 <-< map (\{distance=d, channel=c, intensity=i} -> (d, c, i))))
---               (sample_pixels s).1)
-
-entry sample_points_ (s: state): (state, [][][path_len][4]f32) =
-  let (rng, ps) = sample_points s
+entry sample_points_n (s: state) (samples_per_pixel: u32)
+                    : (state, [][][4]f32) =
+  let (n, m) = s.dimensions
+  let (n, m) = (i32.u32 n, i32.u32 m)
+  let factor = 1 / (f32.u32 samples_per_pixel)
+  let (min_d, max_d) = (0.5, 10)
+  let closest (ps: [path_len]cloud_point): cloud_point =
+       map (\(p: cloud_point) -> p with intensity = p.intensity * factor) ps
+    |> filter (\p -> p.intensity > 0
+                     && p.distance > min_d
+                     && p.distance < max_d)
+    |> minimum_by (.distance)
+    |> maybe.unwrap_or { pos = mkvec3_repeat (-1), distance = f32.inf, intensity = 0 }
+  let merge (p1: cloud_point) (p2s: [path_len]cloud_point)
+          : cloud_point =
+    let p2 = closest p2s
+    in if p1.distance < p2.distance then p1 else p2
+  let (rng, paths) = sample_points s
+  let (rng, points) =
+    loop (rng, points) = (rng, map (map closest) paths :> [m][n]cloud_point)
+    for _i < (i32.u32 samples_per_pixel - 1)
+    do let (rng, points_new) = sample_points (s with rng = rng)
+                               :> (rnge, [m][n][path_len]cloud_point)
+       in ( rng
+          , map2 (map2 merge) points points_new )
   in ( s with rng = rng
-     , map (map (map (\{pos={x, y, z}, intensity} ->
-                        [x, y, z, intensity])))
-           ps )
-
-entry sample_frame_ (s: state): [][][3]f32 =
-  map (map vec3_to_arr) (sample_frame s).1
+     , map (map (\{pos={x, y, z}, distance=_, intensity} ->
+                   [x, y, z, intensity]))
+           points )
 
 entry sample_n_frames (s: state) (n: u32): [][][3]f32 =
   let (rng, img) = sample_frame s

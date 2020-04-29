@@ -11,6 +11,7 @@ type pixel_sample =
 
 type cloud_point =
   { pos: vec3
+  , distance: f32
   , intensity: f32 }
 
 -- Enforcing a ceiling on the path length makes our integrator more
@@ -115,6 +116,7 @@ let sample_pixels (s: state): (rnge, [][](ray, [path_len]pixel_sample)) =
 let sample_points (s: state): (rnge, [][][path_len]cloud_point) =
   let to_cloud_points (ray, ps) =
     map (\p -> { pos = point_at_param ray p.distance
+               , distance = p.distance
                , intensity = p.intensity })
         ps
   in map_snd (map (map to_cloud_points)) (sample_pixels s)
