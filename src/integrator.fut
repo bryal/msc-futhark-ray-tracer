@@ -76,12 +76,12 @@ let path_trace (lr: lightray)
         case #nothing -> finish (path with [i] = { distance = f32.inf, radiance = ambience })
 
 let sample_pixel (scene: accel_scene)
-                     (cam: camera)
-                     (ambience: spectrum)
-                     (w: f32, h: f32)
-                     (j: u32, i: u32)
-                     (rng: rnge)
-                   : (ray, [path_len]pixel_sample) =
+                 (cam: camera)
+                 (ambience: spectrum)
+                 (w: f32, h: f32)
+                 (j: u32, i: u32)
+                 (rng: rnge)
+               : (ray, [path_len]pixel_sample) =
   let (rng, wl, channel) =
     sample_camera_wavelength cam rng
   let r = sample_camera_ray cam
@@ -98,28 +98,32 @@ let sample_pixel (scene: accel_scene)
                                        , channel })
            (path_trace lr scene ambience rng))
 
-let sample_pixels (s: state): (rnge, [][](ray, [path_len]pixel_sample)) =
-  let (w, h) = s.dimensions
-  let (w, h) = ( (w + s .subsampling - 1) / s.subsampling
-               , (h + s.subsampling - 1) / s.subsampling)
-  let rngs = rnge.split_rng (i32.u32 (w * h)) s.rng
+let sample_pixels (rng: rnge)
+                  (w: u32, h: u32)
+                  (scene: accel_scene)
+                  (cam: camera)
+                  (ambience: spectrum)
+                : (rnge, [][](ray, [path_len]pixel_sample)) =
+  let rngs = rnge.split_rng (i32.u32 (w * h)) rng
   let sample' rng ji =
-    sample_pixel s.scene s.cam s.ambience
-                 (f32.u32 w, f32.u32 h) ji
-                 rng
+    sample_pixel scene cam ambience (f32.u32 w, f32.u32 h) ji rng
   let img = tabulate_2d (i32.u32 h) (i32.u32 w) <| \i j ->
     let ix = i * i32.u32 w + j
     let rng = rngs[ix]
     in sample' rng (u32.i32 j, u32.i32 i)
-  in (advance_rng s.rng, img)
+  in (advance_rng rng, img)
 
 let sample_points (s: state): (rnge, [][][path_len]cloud_point) =
+  let (w, h) = s.dimensions
+  let dims = ( (w + s.subsampling - 1) / s.subsampling
+             , (h + s.subsampling - 1) / s.subsampling)
   let to_cloud_points (ray, ps) =
     map (\p -> { pos = point_at_param ray p.distance
                , distance = p.distance
                , intensity = p.intensity })
         ps
-  in map_snd (map (map to_cloud_points)) (sample_pixels s)
+  in map_snd (map (map to_cloud_points))
+             (sample_pixels s.rng dims s.scene s.cam s.ambience)
 
 -- If rendering lidar data, convert to color based on distance of
 -- closest sample. If rendering as visible light, average the radiance
@@ -165,8 +169,11 @@ let visualize_pixels [n] [m]
 
 let sample_frame (s: state): (rnge, [][]vec3) =
   let channels = sensor_channel_visualizations s.cam.conf.sensor
+  let (w, h) = s.dimensions
+  let dims = ( (w + s.subsampling - 1) / s.subsampling
+             , (h + s.subsampling - 1) / s.subsampling)
   in map_snd (visualize_pixels s.render_mode channels)
-             (sample_pixels s)
+             (sample_pixels s.rng dims s.scene s.cam s.ambience)
 
 let sample_frame_accum [m] [n]
                        (s: state)
