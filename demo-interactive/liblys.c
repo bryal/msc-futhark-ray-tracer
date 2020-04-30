@@ -27,12 +27,6 @@ static inline void _sdl_assert(int res, const char *file, int line) {
     }
 }
 
-static int64_t get_wall_time(void) {
-    struct timeval time;
-    assert(gettimeofday(&time,NULL) == 0);
-    return time.tv_sec * 1000000 + time.tv_usec;
-}
-
 void window_size_updated(struct lys_context *ctx, uint32_t newx, uint32_t newy) {
     // https://stackoverflow.com/a/40122002
     ctx->wnd_surface = SDL_GetWindowSurface(ctx->wnd);
@@ -130,14 +124,12 @@ void sdl_loop(struct lys_context *ctx) {
 
 void do_sdl(
     struct lys_context *ctx,
-    bool allow_resize,
     struct futhark_f32_3d* triangle_data,
     struct futhark_u32_1d* triangle_mats,
     struct futhark_f32_2d* mat_data)
 {
     struct futhark_context *fut = ctx->fut;
 
-    ctx->last_time = get_wall_time();
     float cam_pitch = 0.0;
     float cam_yaw = 0.0;
     float cam_origin_[3] = { 0.0f, 0.8f, 1.8f };
@@ -151,14 +143,10 @@ void do_sdl(
         triangle_data, triangle_mats, mat_data,
         cam_pitch, cam_yaw, cam_origin);
 
-    int flags = 0;
-    if (allow_resize) {
-        flags |= SDL_WINDOW_RESIZABLE;
-    }
     ctx->wnd =
         SDL_CreateWindow("Gotta go fast! -- PROPERTTY OF VOLOVO VCARS DONT COPY THAT FLOPPY",
                          SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                         (int)ctx->width, (int)ctx->height, (uint32_t)flags);
+                         (int)ctx->width, (int)ctx->height, SDL_WINDOW_RESIZABLE);
     SDL_ASSERT(ctx->wnd != NULL);
 
     window_size_updated(ctx, ctx->width, ctx->height);
@@ -228,8 +216,6 @@ char* stradd(const char* a, const char* b) {
 }
 
 int main(int argc, char* argv[]) {
-    uint32_t width = INITIAL_WIDTH, height = INITIAL_HEIGHT;
-    bool allow_resize = true;
     char *deviceopt = NULL;
     int interactive = 0;
 
@@ -254,9 +240,6 @@ int main(int argc, char* argv[]) {
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
         printf("Usage: %s options...\n", argv[0]);
         puts("Options:");
-        puts("  -w INT  Set the initial width of the window.");
-        puts("  -h INT  Set the initial height of the window.");
-        puts("  -R      Disallow resizing the window.");
         puts("  -d DEV  Set the computation device.");
         puts("  -i      Select execution device interactively.");
         puts("  -o OBJ  The object scene to render.");
@@ -268,23 +251,6 @@ int main(int argc, char* argv[]) {
     char* obj_path = stradd(parent_dir, "assets/CornellBox-Original.obj");
     while ( (c = getopt(argc, argv, "w:h:Rd:io:")) != -1) {
         switch (c) {
-        case 'w':
-            width = (uint32_t)atoi(optarg);
-            if (width <= 0) {
-                fprintf(stderr, "'%s' is not a valid width.\n", optarg);
-                exit(EXIT_FAILURE);
-            }
-            break;
-        case 'h':
-            height = (uint32_t)atoi(optarg);
-            if (height <= 0) {
-                fprintf(stderr, "'%s' is not a valid width.\n", optarg);
-                exit(EXIT_FAILURE);
-            }
-            break;
-        case 'R':
-            allow_resize = false;
-            break;
         case 'd':
             deviceopt = optarg;
             break;
@@ -312,15 +278,12 @@ int main(int argc, char* argv[]) {
 
     struct lys_context ctx;
     memset(&ctx, 0, sizeof(struct lys_context));
-    ctx.width = width;
-    ctx.height = height;
+    ctx.width = INITIAL_WIDTH;
+    ctx.height = INITIAL_HEIGHT;
     SDL_ASSERT(SDL_Init(SDL_INIT_EVERYTHING) == 0);
 
     struct futhark_context_config* futcfg;
-    struct futhark_context* futctx;
-    create_futhark_context(deviceopt, interactive, &futcfg, &futctx);
-    ctx.fut = futctx;
-
+    create_futhark_context(deviceopt, interactive, &futcfg, &ctx.fut);
 
     size_t num_tris, num_mat_components;
     float* triangle_data;
@@ -338,9 +301,9 @@ int main(int argc, char* argv[]) {
     struct futhark_f32_2d* fut_mat_data =
         futhark_new_f32_2d(ctx.fut, mat_data, (int64_t)num_mat_components / 28, 28);
 
-    do_sdl(&ctx, allow_resize, fut_triangle_data, fut_triangle_mats, fut_mat_data);
+    do_sdl(&ctx, fut_triangle_data, fut_triangle_mats, fut_mat_data);
 
-    futhark_context_free(futctx);
+    futhark_context_free(ctx.fut);
     futhark_context_config_free(futcfg);
     free_obj_data(triangle_data, triangle_mats, mat_data);
     return 0;

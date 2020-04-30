@@ -26,7 +26,6 @@ struct lys_context {
     uint32_t width;
     uint32_t height;
     int32_t *data;
-    int64_t last_time;
     bool running;
 };
 
