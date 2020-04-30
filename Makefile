@@ -45,7 +45,7 @@ all: main-interactive$(EXE) main-save$(EXE) libtracer.a
 .PHONY: lib
 lib: libtracer.a
 
-main-interactive$(EXE): build/tracer_printf.h demo-interactive/liblys.c demo-interactive/liblys.h libtracer.a build/libljus.a
+main-interactive$(EXE): demo-interactive/liblys.c demo-interactive/liblys.h libtracer.a build/libljus.a
 	$(CC) demo-interactive/liblys.c build/libljus.a libtracer.a -o $@ $(CFLAGS) -I./demo-interactive $(INCLUDE) $(LDFLAGS)
 
 main-save$(EXE): $(shell find demo-save/src -name \*.rs) demo-save/Cargo.toml demo-save/.cargo/config libtracer.a
@@ -63,9 +63,6 @@ build/tracer.c: src/lib.fut futhark.pkg $(PROG_FUT_DEPS)
 	mkdir -p build && futhark $(BACKEND) -o build/tracer --library src/lib.fut
 
 build/tracer.h: build/tracer.c
-
-build/tracer_printf.h: build/tracer.c demo-interactive/gen_printf.py
-	python3 demo-interactive/gen_printf.py $@ $<
 
 build/libljus.a: $(shell find ljus/src -name \*.rs) ljus/Cargo.toml
 	cd ljus && cargo build --lib --release && cp target/release/libljus.a ../build/libljus.a

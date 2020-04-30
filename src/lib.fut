@@ -71,8 +71,6 @@ entry sample_n_frames (s: state) (n: u32): [][][3]f32 =
              in (s with img = img with rng = rng with n_frames = s.n_frames + 1)
   in map (map vec3_to_arr) s.img
 
-type text_content = (u32, u32, f32, f32, u32)
-
 entry init (seed: i32)
            (h: u32) (w: u32)
            (cam_conf_id: u32)
@@ -108,7 +106,7 @@ entry init (seed: i32)
 entry resize (h: u32) (w: u32) (s: state): state =
     s with dimensions = (w, h) with mode = false
 
-entry step (_dt: f32) (s: state): state =
+entry step (s: state): state =
   let ((rng, img), n_frames) =
     if s.mode && s.n_frames > 0
     then (sample_frame_accum s, s.n_frames + 1)
@@ -194,11 +192,3 @@ entry render (s: state): [][]argb.colour =
                 (\i j -> unsafe s.img[ i / subsampling
                                      , j / subsampling ])
   in map (map vcol_to_argb) upscaled
-
-entry text_format: []u8 =
-  "FPS: %d\nACCUM FRAMES: %d\nAPERTURE: %.2f\nFOCAL DIST: %.2f\nSUBSAMPLING: %d"
-
-entry text_content (fps: f32) (s: state): text_content =
-  (u32.f32 fps, s.n_frames, s.cam.conf.aperture, s.cam.conf.focal_dist, s.subsampling )
-
-entry text_colour (_: state): argb.colour = argb.yellow

@@ -6,7 +6,6 @@ extern "C" {
     pub type futhark_f32_1d;
     pub type futhark_f32_2d;
     pub type futhark_f32_3d;
-    pub type futhark_f32_4d;
     pub type futhark_context_config;
 
     pub fn futhark_context_config_new() -> *mut futhark_context_config;
@@ -46,12 +45,6 @@ extern "C" {
         out: *mut f32,
     ) -> i32;
 
-    pub fn futhark_values_f32_4d(
-        ctx: *mut futhark_context,
-        arr: *mut futhark_f32_4d,
-        out: *mut f32,
-    ) -> i32;
-
     pub fn futhark_free_opaque_state(
         ctx: *mut futhark_context,
         state: *mut futhark_opaque_state,
@@ -71,27 +64,6 @@ extern "C" {
         cam_yaw: f32,
         cam_origin: *const futhark_f32_1d,
     ) -> i32;
-
-    // pub fn futhark_entry_sample_frame_(
-    //     ctx: *mut futhark_context,
-    //     out: *mut *mut futhark_f32_3d,
-    //     state: *const futhark_opaque_state,
-    // ) -> i32;
-
-    // pub fn futhark_entry_sample_n_frames(
-    //     ctx: *mut futhark_context,
-    //     out: *mut *mut futhark_f32_3d,
-    //     state: *const futhark_opaque_state,
-    //     n: u32,
-    // ) -> i32;
-
-    // pub fn futhark_entry_sample_pixels_(
-    //     ctx: *mut futhark_context,
-    //     distances: *mut *mut futhark_f32_3d,
-    //     channels: *mut *mut futhark_i32_3d,
-    //     intensities: *mut *mut futhark_f32_3d,
-    //     in0: *const futhark_opaque_state,
-    // ) -> i32;
 
     pub fn futhark_entry_sample_points_n(
         ctx: *mut futhark_context,

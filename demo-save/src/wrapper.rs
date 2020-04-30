@@ -3,8 +3,6 @@ use pcd_rs::{PcdDeserialize, PcdSerialize};
 use std::mem;
 use std::path::Path;
 
-const PATH_LEN: usize = 16;
-
 #[repr(C)]
 struct Point {
     pos: Vec3,
@@ -99,48 +97,5 @@ impl Fut {
             .into_iter()
             .map(|p| p.pos)
             .collect()
-    }
-
-    //             data
-    //         .into_iter()
-    //         .map(|path| {
-    //             let mut ps = [Default::default(); PATH_LEN];
-    //             for (i, [x, y, z, intensity]) in path.iter().cloned().enumerate() {
-    //                 ps[i] = Point { x, y, z, intensity }
-    //             }
-
-    //         }path.iter().cloned().map(|| Point { x, y, z, intensity }).collect::<Vec<Point>>())
-    //         .collect
-
-    //              {
-    //             path.iter()
-    //                 .cloned()
-    //                 .filter_map(|[x, y, z, intensity]| guard(intensity > 0.0, Point { x, y, z }))
-    //                 .next()
-    //         })
-    //         .collect::<Vec<Point>>()
-    //     let points = data
-    //         .into_iter()
-    //         .filter_map(|path| {
-    //             path.iter()
-    //                 .cloned()
-    //                 .filter_map(|[x, y, z, intensity]| guard(intensity > 0.0, Point { x, y, z }))
-    //                 .next()
-    //         })
-    //         .collect::<Vec<Point>>();
-    // }
-}
-
-impl Drop for Fut {
-    fn drop(&mut self) {
-        // TODO
-    }
-}
-
-fn guard<T>(predicate: bool, x: T) -> Option<T> {
-    if predicate {
-        Some(x)
-    } else {
-        None
     }
 }
