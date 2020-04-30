@@ -73,7 +73,7 @@ entry sample_n_frames (s: state) (n: u32): [][][3]f32 =
 
 type text_content = (u32, u32, f32, f32, u32)
 
-entry init (_seed: u32)
+entry init (seed: i32)
            (h: u32) (w: u32)
            (cam_conf_id: u32)
            (tri_geoms: [][3][3]f32)
@@ -92,7 +92,7 @@ entry init (_seed: u32)
     else                          (#render_distance, lidar_conf)
   in { dimensions = (w, h)
      , subsampling = 1
-     , rng = minstd_rand.rng_from_seed [123]
+     , rng = minstd_rand.rng_from_seed [seed]
      , img = tabulate_2d (i32.u32 h) (i32.u32 w) (\_ _ -> mkvec3 0 0 0)
      , n_frames = 0
      , ambience = no_sky

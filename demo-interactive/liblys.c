@@ -234,7 +234,7 @@ void do_sdl(
     struct futhark_f32_1d* cam_origin =
         futhark_new_f32_1d(ctx->fut, cam_origin_, 3);
     futhark_entry_init(
-        fut, &ctx->state, (uint32_t)get_wall_time(),
+        fut, &ctx->state, 0,
         ctx->height, ctx->width,
         cam_conf_id,
         triangle_data, triangle_mats, mat_data,
