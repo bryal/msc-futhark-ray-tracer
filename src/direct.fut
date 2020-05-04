@@ -4,7 +4,6 @@ import "scene"
 
 type light_sample = { pos: vec3, wi: vec3, in_radiance: f32, pdf: f32 }
 
-
 let occluded (h: hit) (lightp: vec3) (objs: obj_bvh)
            : bool =
   let v = lightp vec3.- h.pos
@@ -20,11 +19,7 @@ let triangle_area (t: triangle): f32 =
   let e2 = t.c vec3.- t.a
   in vec3.norm (vec3.cross e1 e2) / 2
 
-let arealight_pdf (l: arealight): f32 =
-  match arealight_geom l
-  -- TODO
-  case #sphere _ -> 0
-  case #triangle t -> 1 / triangle_area t
+let arealight_pdf (l: arealight): f32 = 1 / triangle_area (arealight_geom l)
 
 let sample_pointlight (i: interaction) (pos: vec3) (emission: spectrum)
                     : light_sample =
@@ -36,22 +31,15 @@ let sample_pointlight (i: interaction) (pos: vec3) (emission: spectrum)
 
 let sample_arealight (rng: rnge) (i: interaction) (l: arealight)
                    : (rnge, light_sample) =
-  match arealight_geom l
-  case #triangle t ->
-    let e1 = t.b vec3.- t.a
-    let e2 = t.c vec3.- t.a
-    let area = vec3.norm (vec3.cross e1 e2) / 2
-    let (_rng, (u, v)) = random_in_triangle rng
-    let p = vec3.(t.a + scale u e1 + scale v e2)
-    let wi = vec3.normalise (p vec3.- i.h.pos)
-    let in_radiance = arealight_incident_radiance l i.h.pos p i.wavelen
-    in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
-  -- TODO
-  case #sphere _ ->
-    (rng, { pos = mkvec3 0 0 0
-          , wi = mkvec3 0 0 0
-          , in_radiance = 0
-          , pdf = 0 })
+  let t = arealight_geom l
+  let e1 = t.b vec3.- t.a
+  let e2 = t.c vec3.- t.a
+  let area = vec3.norm (vec3.cross e1 e2) / 2
+  let (_rng, (u, v)) = random_in_triangle rng
+  let p = vec3.(t.a + scale u e1 + scale v e2)
+  let wi = vec3.normalise (p vec3.- i.h.pos)
+  let in_radiance = arealight_incident_radiance l i.h.pos p i.wavelen
+  in (rng, { pos = p, wi, in_radiance, pdf = 1 / area })
 
 let sample_light (rng: rnge) (i: interaction) (l: light) (objs: obj_bvh)
                : (rnge, light_sample) =
@@ -96,7 +84,7 @@ let estimate_direct (rng: rnge)
       let (rng, { wi, bsdf, pdf }) = sample_dir wo i rng
       in ( rng
          , let r = mkray_adjust_acne i.h wi
-           in match hit_geom f32.highest r (arealight_geom l)
+           in match hit_triangle f32.highest r (arealight_geom l)
               case #nothing -> 0
               case #just lh ->
                 if occluded i.h lh.pos objs

@@ -6,9 +6,6 @@ type ray = { origin: vec3, dir: vec3 }
 type hit = { t: f32, pos: vec3, normal: vec3 }
 
 type triangle = { a: vec3, b: vec3, c: vec3 }
-type sphere = { center: vec3, radius: f32 }
-
-type geom = #sphere sphere | #triangle triangle
 
 -- TODO: Benchmark if it's faster to represent an aabb as a pair of
 -- (top-forward-rightmost corner, bot-backward-leftmost corner).
@@ -51,13 +48,13 @@ let mkray_adjust_acne (h: hit) (wi: vec3): ray =
 let point_at_param (r: ray) (t: f32): vec3 =
   r.origin vec3.+ vec3.scale t r.dir
 
-let mkrect (corners: [4]vec3): [2]geom =
-  [ #triangle { a = corners[0]
-              , b = corners[1]
-              , c = corners[2] }
-  , #triangle { a = corners[2]
-              , b = corners[3]
-              , c = corners[0] } ]
+let mkrect (corners: [4]vec3): [2]triangle =
+  [ { a = corners[0]
+    , b = corners[1]
+    , c = corners[2] }
+  , { a = corners[2]
+    , b = corners[3]
+    , c = corners[0] } ]
 
 let triangle_normal (t: triangle): vec3 =
   let e1 = t.b vec3.- t.a
@@ -88,27 +85,6 @@ let hit_triangle (tmax: f32) (ra: ray) (tr: triangle)
               let normal = vec3.normalise n
               in { t, pos, normal }
 
-let hit_sphere (tmax: f32) (r: ray) (s: sphere)
-             : maybe hit =
-  let oc = r.origin vec3.- s.center
-  let b = 2 * vec3.dot oc r.dir
-  let c = vec3.dot oc oc - s.radius * s.radius
-  let discriminant = b * b - 4 * c
-  let root0 = (-b - f32.sqrt discriminant) / 2
-  let root1 = (-b + f32.sqrt discriminant) / 2
-  let handle_root t =
-    let pos = point_at_param r t
-    let normal = vec3.scale (1 / s.radius) (pos vec3.- s.center)
-    in { t, pos, normal }
-  in maybe.when (discriminant > 0)
-     <| maybe.or (maybe.guard (in_bounds root0 tmax) (handle_root root0))
-                 (maybe.guard (in_bounds root1 tmax) (handle_root root1))
-
-let hit_geom (tmax: f32) (r: ray) (g: geom): maybe hit =
-  match g
-  case #sphere s -> hit_sphere tmax r s
-  case #triangle t -> hit_triangle tmax r t
-
 let aabb_min_corner (b: aabb): vec3 =
   b.center vec3.- b.half_dims
 
@@ -127,20 +103,11 @@ let containing_aabb (b1: aabb) (b2: aabb): aabb =
 let bounding_box_point (p: vec3): aabb =
   { center = p, half_dims = mkvec3 0 0 0 }
 
-let bounding_box_sphere (s: sphere): aabb =
-  { center = s.center
-  , half_dims = mkvec3 s.radius s.radius s.radius }
-
 let bounding_box_triangle (t: triangle): aabb =
   let a = bounding_box_point t.a
   let b = bounding_box_point t.b
   let c = bounding_box_point t.c
   in containing_aabb a (containing_aabb b c)
-
-let bounding_box_geom (g: geom): aabb =
-  match g
-  case #sphere s -> bounding_box_sphere s
-  case #triangle t -> bounding_box_triangle t
 
 -- TODO: Also look at
 -- http://www.pbr-book.org/3ed-2018/Shapes/Basic_Shape_Interface.html#Bounds3::IntersectP

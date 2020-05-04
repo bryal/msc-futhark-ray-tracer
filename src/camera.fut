@@ -114,9 +114,9 @@ let gen_transmitter (c: camera) (r: ray): []light =
   map (\l -> #arealight l)
   <| match c.conf.transmitter
      case #flash { radius, emission } ->
-       map (\t -> #diffuselight { geom = #triangle t, emission })
+       map (\t -> #diffuselight { geom = t, emission })
            (disk c.origin (cam_dir c) radius n_sectors)
      case #scanning { radius, theta, emission } ->
-       map (\t -> #frustumlight { geom = #triangle t, theta, emission })
+       map (\t -> #frustumlight { geom = t, theta, emission })
            (disk c.origin r.dir radius n_sectors)
      case #none -> []

@@ -3,11 +3,11 @@ import "material"
 import "light"
 import "bvh"
 
-type obj = { geom: geom, mat_ix: u32 }
+type obj = { geom: triangle, mat_ix: u32 }
 
 module obj_Geom: Geom with t = obj = {
   type t = obj
-  let get_geom: obj -> geom = (.geom)
+  let get_geom: obj -> triangle = (.geom)
 }
 
 module obj_bvh = mk_lbvh obj_Geom
@@ -28,9 +28,9 @@ let parse_triangles [t]
                   : [t]obj =
   let f tri (mat_ix: u32) =
     let tri' = (map vec3_from_array tri)
-    in { geom = #triangle { a = tri'[0]
-                          , b = tri'[1]
-                          , c = tri'[2] }
+    in { geom = { a = tri'[0]
+                , b = tri'[1]
+                , c = tri'[2] }
        , mat_ix }
   in map2 f tris tri_mats
 

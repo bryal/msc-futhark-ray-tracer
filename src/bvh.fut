@@ -5,7 +5,7 @@ import "shapes"
 
 module type Geom = {
   type t
-  val get_geom: t -> geom
+  val get_geom: t -> triangle
 }
 
 module type bvh = {
@@ -35,11 +35,11 @@ module mk_fake_bvh (G: Geom): bvh with t = G.t = {
       case (_, #nothing) -> a
       case (#just (_, ah), #just (_, bh)) ->
         if ah.t < bh.t then a else b
-    let hit x = maybe.map (\h -> (x, h)) (hit_geom tmax r (G.get_geom x))
+    let hit x = maybe.map (\h -> (x, h)) (hit_triangle tmax r (G.get_geom x))
     in reduce select_min_hit #nothing (map hit xs)
 
   let any_hit tmax r xs =
-    any (maybe.is_just <-< hit_geom tmax r <-< G.get_geom) xs
+    any (maybe.is_just <-< hit_triangle tmax r <-< G.get_geom) xs
 }
 
 let morton_n_bits: u32 = 30
@@ -84,7 +84,7 @@ module mk_lbvh (G: Geom): bvh with t = G.t = {
     , nodes: []node }
 
   let build [n] (xs: [n]t): bvh =
-    let aabbs = map (bounding_box_geom <-< G.get_geom) xs
+    let aabbs = map (bounding_box_triangle <-< G.get_geom) xs
     let neutral_aabb = { center = mkvec3 0 0 0
                        , half_dims = mkvec3_repeat (-f32.inf) }
     let bounds = reduce_comm containing_aabb neutral_aabb aabbs
@@ -137,12 +137,12 @@ module mk_lbvh (G: Geom): bvh with t = G.t = {
               match ptr
               case #internal i -> (closest, tmax, i, #internal current)
               case #leaf i ->
-                match hit_geom tmax r (G.get_geom (unsafe bvh.leaves[i]))
+                match hit_triangle tmax r (G.get_geom (unsafe bvh.leaves[i]))
                 case #just hit -> (i, hit.t, current, ptr)
                 case #nothing -> (closest, tmax, current, ptr)
     in maybe.when (closest >= 0)
        <| let a = unsafe bvh.leaves[closest]
-          in maybe.map (\h -> (a, h)) (hit_geom tmax r (G.get_geom a))
+          in maybe.map (\h -> (a, h)) (hit_triangle tmax r (G.get_geom a))
 
   -- TODO: Can probably be made faster. Just a basic improved version
   --       of closest_hit atm.
@@ -162,7 +162,7 @@ module mk_lbvh (G: Geom): bvh with t = G.t = {
               match ptr
               case #internal i -> (false, i, #internal current)
               case #leaf i ->
-                match hit_geom tmax r (G.get_geom (unsafe bvh.leaves[i]))
+                match hit_triangle tmax r (G.get_geom (unsafe bvh.leaves[i]))
                 case #just _ -> (true, current, ptr)
                 case #nothing -> (false, current, ptr)
 }
