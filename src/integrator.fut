@@ -91,6 +91,8 @@ let sample_pixel (scene: accel_scene)
   -- TODO: When lidar, create very thin spotlight based on the
   --       direction of the ray.
   let lr = { r, wavelen = wl }
+  -- TODO: Strange pattern. Will result in a unique scene for each
+  -- ray. Experiment with a separate transmitter paramter.
   let scene = scene with lights = scene.lights ++ gen_transmitter cam r
   in ( r
      , map (\{ distance, radiance } -> { distance

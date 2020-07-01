@@ -62,6 +62,8 @@ entry sample_points_n (s: state) (samples_per_pixel: u32)
                    [x, y, z, intensity]))
            points )
 
+-- TODO: Fewer `entry`points -> faster compilation. Futhark inlines
+--       everything in each `entry`.
 entry sample_n_frames (s: state) (n: u32): [][][3]f32 =
   let (rng, img) = sample_frame s
   let s = s with n_frames = 1 with rng = rng with img = img
@@ -192,3 +194,9 @@ entry render (s: state): [][]argb.colour =
                 (\i j -> unsafe s.img[ i / subsampling
                                      , j / subsampling ])
   in map (map vcol_to_argb) upscaled
+
+
+-- TODO: Play with constants for parallelism saturation
+--
+-- Set default number of groups
+-- Set group size
